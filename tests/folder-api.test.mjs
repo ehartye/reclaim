@@ -55,6 +55,27 @@ test("folder-only scans persist aggregate reports and validate operation and str
   await settled(base, 1);
   assert.equal(app.state.scans.length, 1);
   const summary = app.state.scans[0];
+  const ignoredRequest = (body, authenticated = true) =>
+    fetch(base + "/api/folders/ignored", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(authenticated ? { "X-Reclaim-Token": initial.token } : {}),
+      },
+      body: JSON.stringify(body),
+    });
+  assert.equal(
+    (await ignoredRequest({ scanId: summary.id, minimumBytes: -1 })).status,
+    400,
+  );
+  assert.equal(
+    (await ignoredRequest({ scanId: summary.id, minimumBytes: 0 }, false))
+      .status,
+    403,
+  );
+  const ignored = await ignoredRequest({ scanId: summary.id, minimumBytes: 0 });
+  assert.equal(ignored.status, 200);
+  assert.deepEqual((await ignored.json()).targets, []);
   assert.equal(summary.operation, "folder-sizes");
   const report = await fetch(base + "/api/scans/" + summary.id).then((r) =>
     r.json(),

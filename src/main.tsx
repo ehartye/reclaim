@@ -738,6 +738,12 @@ function App() {
             <LargeFolders
               key={scan.id}
               scan={scan}
+              onFindIgnored={
+                isSample
+                  ? undefined
+                  : (minimumBytes) =>
+                      api("folders/ignored", { scanId: scan.id, minimumBytes })
+              }
               onInspect={(path, offset = 0) =>
                 api("folders/inspect", {
                   scanId: scan.id,

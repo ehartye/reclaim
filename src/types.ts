@@ -37,6 +37,28 @@ export type FolderInspection = {
   nextOffset: number | null;
   notices: string[];
 };
+export type IgnoredFolderResult = {
+  scanId: string;
+  recordedAt: string;
+  checkedAt: string;
+  minimumBytes: number;
+  targets: (Directory & {
+    repository: string;
+    ignore: { source: string; line: number; pattern: string };
+    cleanupSupported: boolean;
+    reason: string;
+  })[];
+  coverage: {
+    complete: boolean;
+    candidateCount: number;
+    checkedDirectories: number;
+    repositories: number;
+    directoryLimit: number;
+  };
+  errors: { path: string; reason: string }[];
+  skipped: { path: string; reason: string }[];
+  notices: string[];
+};
 export type Scan = {
   folderSizing?: {
     minimumBytes: number;

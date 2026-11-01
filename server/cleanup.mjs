@@ -170,7 +170,9 @@ async function evidence(target, kind) {
       /^(package\.json|package-lock\.json|npm-shrinkwrap\.json|pnpm-lock\.yaml|yarn\.lock|bun\.lockb?|Cargo\.toml|Cargo\.lock|requirements\.txt|pyproject\.toml|Pipfile|environment\.yml|project\.godot|Assets|ProjectSettings|Packages)$/i.test(
         name,
       ) ||
-      /\.(csproj|fsproj|vbproj)$/i.test(name)
+      /\.(csproj|fsproj|vbproj|uproject)$/i.test(name) ||
+      (description.label === "Unreal project intermediates" &&
+        name === "Source")
     ) {
       const p = path.join(parent, name);
       const st = await lstat(p, { bigint: true });

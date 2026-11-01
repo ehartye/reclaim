@@ -32,6 +32,7 @@ import { probeActivity } from "./opportunity-advice.mjs";
 import { latestChange } from "../shared/opportunities.ts";
 import { inspectFolderFiles } from "./folder-scan.mjs";
 import { normalizeFolderReport } from "./folder-accounting.mjs";
+import { findIgnoredFolders } from "./ignored-folders.mjs";
 
 const appRoot = fileURLToPath(new URL("../", import.meta.url));
 const csvCell = (value) =>
@@ -418,6 +419,26 @@ export async function createApp({
         }
         if (!body || typeof body !== "object" || Array.isArray(body))
           throw error("Expected an object.");
+        if (url.pathname === "/api/folders/ignored") {
+          if (
+            !Number.isSafeInteger(body.minimumBytes) ||
+            body.minimumBytes < 0 ||
+            body.minimumBytes > 1024 ** 5
+          )
+            throw error("Choose a valid folder size threshold.");
+          const report = await loadScan(body.scanId);
+          json(
+            await findIgnoredFolders(report, body.minimumBytes, {
+              exclusions: [
+                ...report.options.exclusions,
+                ...state.settings.exclusions,
+              ],
+              skipCloud: state.settings.skipCloud || report.options.skipCloud,
+              protectedReason: cleanup.protectionReason,
+            }),
+          );
+          return;
+        }
         if (url.pathname === "/api/folders/inspect") {
           if (typeof body.path !== "string" || !path.isAbsolute(body.path))
             throw error("Choose a known folder.");

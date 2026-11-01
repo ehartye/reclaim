@@ -10,6 +10,12 @@ A folder tree shows qualifying branches above a configurable threshold. Parent t
 
 Quick scans may reuse complete dated totals for small branches. Reused totals are estimates because changes deeper in a branch can leave its own timestamps unchanged. Fresh scans recount accessible metadata. Individual-file inspection is a separate, on-demand operation with pagination and a time budget.
 
+## Git-ignored folder operation
+
+`POST /api/folders/ignored` accepts a known scan ID and a strict minimum byte threshold. It filters the saved directory inventory, checks current directory identity and repository ownership, and batches NUL-delimited paths through `git check-ignore --stdin -z --verbose`. Git supplies ignore precedence, negation and rule provenance. Git metadata, excluded paths and linked directories are omitted; unavailable entries and Git failures have explicit coverage. The operation is limited to 10,000 candidate directories with an inspection budget, separate from the uncapped foundational scan.
+
+Only outermost matching directories are returned, preventing parent/child double counting. Ignore rules are current observations; logical sizes remain dated scan evidence. A preliminary generated-folder description controls whether a row can request cleanup review, with protected or unknown outputs remaining review-only. Ignore status never authorizes deletion. The browser remembers this operation and its threshold; rerunning refreshes Git evidence, while a fresh foundational scan refreshes size evidence.
+
 ## Cleanup evidence
 
 Generated folders and worktrees are candidates until a fresh inspection verifies eligibility. A name, age or recorded size alone does not authorize deletion. Supported generated folders require project and restoration evidence. Protected paths, tracked files, links, cloud placeholders and unsafe Git states are blocked.
