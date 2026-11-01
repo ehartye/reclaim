@@ -3792,12 +3792,108 @@ dialog::backdrop {
 }
 .routines-workspace {
   display: grid;
-  grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
+  grid-template-columns: minmax(290px, 360px) minmax(0, 1fr);
   gap: 24px;
   align-items: start;
 }
+.routine-batch-bar {
+  grid-column: 1 / -1;
+  overflow: hidden;
+}
+.routine-batch-intro {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 20px;
+  padding: 22px 24px 14px;
+}
+.routine-batch-intro h2 {
+  margin: 0 0 7px;
+  font-size: 21px;
+}
+.routine-batch-intro p,
+.routine-batch-note {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.6;
+  margin: 0;
+}
+.routine-batch-note {
+  padding: 0 24px 12px;
+}
+.routine-batch-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 14px 24px;
+  background: #eaf1fc;
+  border-top: 1px solid #d7e3f8;
+  font-size: 12px;
+  line-height: 1.6;
+  color: #325c9b;
+}
+.routine-batch-progress span {
+  font-variant-numeric: tabular-nums;
+}
+.routine-dirty {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 24px;
+  font-size: 12px;
+  background: #fff5df;
+  color: #72541a;
+  margin-bottom: 12px;
+}
+.routine-row-heading,
+.routine-row-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+}
+.routine-row-heading {
+  justify-content: space-between;
+}
+.routine-row-heading strong {
+  flex: 1 1 170px;
+}
+.routine-status {
+  color: #526176;
+  font-size: 10px;
+  font-weight: 600;
+}
+.routine-status.running {
+  color: #2454a0;
+}
+.routine-status.failed,
+.routine-choice .routine-row-error {
+  color: #a42f3a;
+}
+.routine-status.needs-settings,
+.routine-status.partial,
+.routine-choice .routine-expired {
+  color: #805b13;
+}
+.routine-potential {
+  font-family: Bahnschrift, Aptos, sans-serif;
+  font-size: 18px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  margin-top: 3px;
+}
+.routine-choice small {
+  color: #526176;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
 .routine-directory {
   overflow: hidden;
+}
+.routine-mobile-jump {
+  display: none;
 }
 .routine-choice {
   display: flex;
@@ -3827,9 +3923,11 @@ dialog::backdrop {
 .routine-choice strong {
   font-size: 13px;
 }
-.routine-choice small,
 .routine-muted {
   color: var(--muted);
+  font-size: 12px;
+}
+.routine-choice small {
   font-size: 12px;
 }
 .routine-mode {
@@ -3998,6 +4096,14 @@ dialog::backdrop {
   outline-offset: -3px;
 }
 @media (max-width: 950px) {
+  .routine-mobile-jump {
+    display: inline-block;
+    margin-top: 10px;
+    font-size: 12px;
+  }
+  .routine-back {
+    margin: 18px 24px 0;
+  }
   .routines-workspace {
     grid-template-columns: 1fr;
   }
@@ -4010,6 +4116,21 @@ dialog::backdrop {
   }
 }
 @media (max-width: 560px) {
+  .routine-batch-intro {
+    align-items: flex-start;
+    flex-direction: column;
+    padding: 18px;
+    gap: 12px;
+  }
+  .routine-batch-note,
+  .routine-batch-progress,
+  .routine-dirty {
+    padding-left: 18px;
+    padding-right: 18px;
+  }
+  .routine-directory {
+    grid-template-columns: 1fr;
+  }
   .routine-controls {
     grid-template-columns: 1fr;
   }

@@ -14,12 +14,39 @@ import type {
   RoutineGuide,
 } from "../types";
 import { folderBytes } from "../folder-format";
+import {
+  RoutineBatch,
+  isPreparationFresh,
+  routineBatchProgress,
+  sortedRoutineRows,
+  type RoutineBatchState,
+} from "../../shared/routine-batch";
 const modes = {
   "in-app": "In-app review",
   guided: "Guided maintenance",
   "review-only": "Review only",
 };
-const signature = (value: RoutinePreset) => JSON.stringify(value);
+const signature = (value: RoutinePreset) =>
+  JSON.stringify([
+    value.routineId,
+    value.policyVersion,
+    value.minimumBytes,
+    value.minimumAgeDays,
+    value.roots,
+  ]);
+const statusLabels = {
+  queued: "Queued",
+  running: "Checking…",
+  successful: "Checked",
+  partial: "Partial discovery",
+  failed: "Failed",
+  "needs-settings": "Needs settings",
+  "not-run": "Not run",
+};
+const displayDate = (value: string) =>
+  Number.isFinite(Date.parse(value))
+    ? new Date(value).toLocaleString()
+    : "Date unavailable";
 export function Routines({
   api,
   scanId,
@@ -29,30 +56,43 @@ export function Routines({
   scanId?: string;
   onPrepare: (request: { runId: string; candidateId: string }) => void;
 }) {
-  const [catalog, setCatalog] = useState<RoutineCatalog | null>(null);
+  const [snapshot, setSnapshot] =
+    useState<RoutineBatchState<RoutineRun> | null>(null);
   const [selected, setSelected] = useState("generated-output");
   const [draft, setDraft] = useState<RoutinePreset | null>(null);
   const [rootText, setRootText] = useState("");
-  const [run, setRun] = useState<RoutineRun | null>(null);
-  const [expired, setExpired] = useState(false);
-  const [busy, setBusy] = useState(false),
+  const [now, setNow] = useState(Date.now);
+  const [singleBusy, setBusy] = useState(false),
     [error, setError] = useState(""),
     [message, setMessage] = useState("");
+  const batch = useRef<RoutineBatch<RoutineRun> | null>(null);
+  const apiRef = useRef(api);
+  apiRef.current = api;
+  const selectedRef = useRef(selected);
+  selectedRef.current = selected;
   const revision = useRef(0);
   useEffect(() => {
-    setExpired(false);
-    if (!run) return;
-    const timer = window.setTimeout(() => setExpired(true), 300000);
-    return () => window.clearTimeout(timer);
-  }, [run?.id]);
-  useEffect(() => {
     let live = true;
-    api("routines")
+    setSnapshot(null);
+    setDraft(null);
+    setBusy(false);
+    setError("");
+    setMessage("");
+    apiRef
+      .current("routines")
       .then((next: RoutineCatalog) => {
         if (live) {
-          setCatalog(next);
-          setDraft(next.presets[selected]);
-          setRootText(next.presets[selected].roots.join("\n"));
+          const model = new RoutineBatch<RoutineRun>({
+            catalog: next,
+            scanId,
+            request: (request) => apiRef.current("routines/run", request),
+            onChange: setSnapshot,
+          });
+          batch.current = model;
+          setSnapshot(model.getState());
+          const preset = next.presets[selectedRef.current];
+          setDraft(preset);
+          setRootText(preset.roots.join("\n"));
         }
       })
       .catch((e) => {
@@ -61,8 +101,38 @@ export function Routines({
     return () => {
       live = false;
       revision.current++;
+      batch.current?.dispose();
+      batch.current = null;
     };
-  }, []);
+  }, [scanId]);
+  useEffect(() => {
+    let timer: number | undefined;
+    function update() {
+      const current = Date.now();
+      setNow(current);
+      const deadlines =
+        snapshot?.rows.flatMap((row) =>
+          typeof row.preparationDeadline === "number" &&
+          row.preparationDeadline > current
+            ? [row.preparationDeadline]
+            : [],
+        ) ?? [];
+      if (deadlines.length)
+        timer = window.setTimeout(update, Math.min(...deadlines) - current + 1);
+    }
+    update();
+    return () => window.clearTimeout(timer);
+  }, [snapshot]);
+  const catalog = snapshot?.catalog;
+  const row = snapshot?.rows.find((item) => item.definition.id === selected);
+  const run = row?.run;
+  const expired = !!run && !!row && !isPreparationFresh(row, now);
+  const batchActive =
+    !!snapshot &&
+    ["refreshing", "running", "stopping"].includes(snapshot.status);
+  const busy = singleBusy || batchActive;
+  const progress = snapshot ? routineBatchProgress(snapshot) : null;
+  const running = snapshot?.rows.find((item) => item.status === "running");
   const definition = catalog?.definitions.find((item) => item.id === selected);
   const valid =
     !!draft &&
@@ -75,9 +145,38 @@ export function Routines({
         draft.minimumAgeDays <= 36500));
   const stale =
     !!run && (!draft || signature(run.parameters) !== signature(draft));
+  const dirty =
+    !!draft &&
+    !!catalog &&
+    (signature(draft) !== signature(catalog.presets[selected]) ||
+      rootText !== catalog.presets[selected].roots.join("\n"));
   const invalidPreset = catalog?.invalidPresets[selected];
+  function useSaved() {
+    if (busy || !catalog) return;
+    const preset = structuredClone(catalog.presets[selected]);
+    setDraft(preset);
+    setRootText(preset.roots.join("\n"));
+    setMessage("");
+    setError("");
+  }
+  async function startAll() {
+    const model = batch.current;
+    if (!model || busy || dirty) return;
+    setError("");
+    setMessage("");
+    await model.start(async () => {
+      const next: RoutineCatalog = await apiRef.current("routines");
+      if (batch.current === model) {
+        const preset = next.presets[selectedRef.current];
+        setDraft(structuredClone(preset));
+        setRootText(preset.roots.join("\n"));
+      }
+      return next;
+    });
+  }
   async function action(save: boolean) {
-    if (!draft || !valid || (!save && invalidPreset)) return;
+    const model = batch.current;
+    if (!model || busy || !draft || !valid || (!save && invalidPreset)) return;
     const current = ++revision.current;
     setBusy(true);
     setError("");
@@ -86,10 +185,10 @@ export function Routines({
       if (save) {
         const next: RoutineCatalog = await api("routines/presets", draft);
         if (current === revision.current) {
-          setCatalog(next);
+          model.replaceCatalog(next);
           setDraft(next.presets[selected]);
           setRootText(next.presets[selected].roots.join("\n"));
-          setRun(null);
+          model.clearResult(selected);
           setMessage("Preset saved for the next run.");
         }
       } else {
@@ -104,13 +203,16 @@ export function Routines({
           ...(scanId ? { scanId } : {}),
         });
         if (current === revision.current) {
-          setRun(next);
+          model.replaceResult(next);
           setDraft(next.parameters);
           setRootText(next.parameters.roots.join("\n"));
         }
       }
     } catch (e) {
-      if (current === revision.current) setError((e as Error).message);
+      if (current === revision.current) {
+        setError((e as Error).message);
+        if (!save) model.failResult(selected, e);
+      }
     } finally {
       if (current === revision.current) setBusy(false);
     }
@@ -118,9 +220,15 @@ export function Routines({
   function choose(item: RoutineDefinition) {
     revision.current++;
     setSelected(item.id);
-    setDraft(catalog!.presets[item.id]);
-    setRootText(catalog!.presets[item.id].roots.join("\n"));
-    setRun(null);
+    selectedRef.current = item.id;
+    const retained = snapshot?.rows.find(
+      (row) => row.definition.id === item.id,
+    )?.run;
+    const preset = structuredClone(
+      retained?.parameters ?? catalog!.presets[item.id],
+    );
+    setDraft(preset);
+    setRootText(preset.roots.join("\n"));
     setError("");
     setMessage("");
   }
@@ -181,35 +289,198 @@ export function Routines({
   }
   return (
     <div className="routines-workspace">
-      <div className="routine-directory panel" aria-label="Cleanup routines">
-        <div className="panel-heading">
+      <section
+        className="panel routine-batch-bar"
+        aria-label="Run all routines"
+      >
+        <div className="routine-batch-intro">
           <div>
-            <h2>Choose a routine</h2>
-            <p>Repeat the review. Keep the rebuild in view.</p>
+            <h2>Compare recorded potential</h2>
+            <p>
+              Check every routine with its saved settings. Review cleanup
+              individually.
+            </p>
+          </div>
+          <div className="routine-actions">
+            <button
+              className="primary small"
+              disabled={!catalog || busy || dirty}
+              onClick={() => void startAll()}
+            >
+              <RefreshCw size={15} className={batchActive ? "spin" : ""} /> Run
+              all
+            </button>
+            {batchActive && (
+              <button
+                className="secondary small"
+                disabled={snapshot?.status === "stopping"}
+                onClick={() => batch.current?.stopAfterCurrent()}
+              >
+                {snapshot?.status === "stopping"
+                  ? "Stopping after current routine…"
+                  : "Stop after current routine"}
+              </button>
+            )}
           </div>
         </div>
-        {catalog?.definitions.map((item) => (
-          <button
-            key={item.id}
-            className={`routine-choice ${selected === item.id ? "selected" : ""}`}
-            aria-pressed={selected === item.id}
-            disabled={busy}
-            onClick={() => choose(item)}
-          >
-            <strong>{item.label}</strong>
-            <span className={`routine-mode ${item.mode}`}>
-              {modes[item.mode]}
+        {dirty && (
+          <div className="routine-dirty" role="status">
+            <span>
+              Unsaved changes. Save this preset or use saved settings before Run
+              all.
             </span>
-            <small>{item.recoveryCost} recovery cost</small>
-          </button>
-        ))}
+            <button
+              className="secondary small"
+              disabled={busy}
+              onClick={useSaved}
+            >
+              Use saved settings
+            </button>
+          </div>
+        )}
+        {!scanId && (
+          <p className="routine-batch-note">
+            No real report selected. Size evidence is unknown; checks use
+            bounded discovery.
+          </p>
+        )}
+        <p className="routine-batch-note">
+          Potential is recorded logical scope size, not promised free space.
+          Routines can overlap; there is no combined total.
+        </p>
+        {snapshot?.refreshError && (
+          <div className="alert error" role="alert">
+            Catalog refresh failed: {snapshot.refreshError}. Previous dated
+            results remain available.
+          </div>
+        )}
+        {progress && (
+          <div
+            className="routine-batch-progress"
+            role="status"
+            aria-live="polite"
+            aria-atomic="true"
+          >
+            <strong>
+              {snapshot?.status === "refreshing"
+                ? "Refreshing saved settings…"
+                : snapshot?.status === "stopping"
+                  ? "Waiting for the current check to finish"
+                  : running
+                    ? `Checking ${running.definition.label}`
+                    : snapshot?.status === "settled"
+                      ? "Routine checks settled"
+                      : "Ready to check routines"}
+            </strong>
+            <span>
+              {progress.processed} of {progress.total} processed ·{" "}
+              {progress.checked} checked · {progress.failed} failed ·{" "}
+              {progress.needsSettings} needs settings · {progress.remaining}{" "}
+              remaining · {progress.notRun} not run
+            </span>
+          </div>
+        )}
+      </section>
+      <div
+        id="routine-comparison"
+        tabIndex={-1}
+        className="routine-directory panel"
+        aria-label="Cleanup routines"
+      >
+        <div className="panel-heading">
+          <div>
+            <h2>Routine comparison</h2>
+            <p>Known recorded sizes, largest first.</p>
+            <a className="routine-mobile-jump" href="#routine-detail">
+              View selected routine ↓
+            </a>
+          </div>
+        </div>
+        {sortedRoutineRows(snapshot?.rows ?? []).map((entry) => {
+          const item = entry.definition,
+            summary = entry.summary;
+          return (
+            <button
+              key={item.id}
+              data-routine-id={item.id}
+              className={`routine-choice ${selected === item.id ? "selected" : ""}`}
+              aria-pressed={selected === item.id}
+              disabled={singleBusy}
+              onClick={() => choose(item)}
+            >
+              <span className="routine-row-heading">
+                <strong>{item.label}</strong>
+                <span className={`routine-status ${entry.status}`}>
+                  {statusLabels[entry.status]}
+                </span>
+              </span>
+              <span className="routine-row-meta">
+                <span className={`routine-mode ${item.mode}`}>
+                  {modes[item.mode]}
+                </span>
+                <small>{item.recoveryCost} recovery cost</small>
+              </span>
+              <span className="routine-potential">
+                {!summary
+                  ? "Size unknown"
+                  : summary.candidateCount === 0
+                    ? "No matches under saved filters"
+                    : summary.knownBytes === null
+                      ? "Size unknown"
+                      : `${summary.estimated ? "≈ " : ""}${folderBytes(summary.knownBytes)} recorded`}
+              </span>
+              {summary && (
+                <>
+                  <small>
+                    {summary.candidateCount} matching folders ·{" "}
+                    {summary.unknownSizeCount} unknown size
+                    {summary.estimated ? " · Estimated" : ""}
+                    {summary.incomplete ? " · Incomplete sizes" : ""}
+                  </small>
+                  <small>
+                    {summary.coverage.complete
+                      ? "Complete discovery"
+                      : "Partial discovery"}{" "}
+                    · {summary.coverage.checkedDirectories} /{" "}
+                    {summary.coverage.candidateCount} checked
+                  </small>
+                  <small>Checked {displayDate(summary.checkedAt)}</small>
+                  <small>
+                    {summary.recordedAt.length
+                      ? `Size dates: ${summary.recordedAt.map(displayDate).join("; ")}`
+                      : "No recorded size date"}
+                  </small>
+                  {!isPreparationFresh(entry, now) && (
+                    <small className="routine-expired">
+                      Run again to review cleanup
+                    </small>
+                  )}
+                </>
+              )}
+              {entry.error && (
+                <small className="routine-row-error">{entry.error}</small>
+              )}
+            </button>
+          );
+        })}
         {!catalog && !error && (
           <p className="routine-padding" role="status">
             Loading routines…
           </p>
         )}
       </div>
-      <section className="panel routine-detail" aria-label="Selected routine">
+      <section
+        id="routine-detail"
+        tabIndex={-1}
+        className="panel routine-detail"
+        aria-label="Selected routine"
+      >
+        <a
+          className="routine-mobile-jump routine-back"
+          href="#routine-comparison"
+        >
+          ↑ Back to comparison
+        </a>
         {error && (
           <div className="alert error" role="alert">
             {error}
@@ -218,6 +489,11 @@ export function Routines({
         {message && (
           <div className="alert" role="status">
             {message}
+          </div>
+        )}
+        {row?.error && row.error !== error && (
+          <div className="alert error" role="alert">
+            {row.error}
           </div>
         )}
         {definition && draft && (
@@ -358,8 +634,8 @@ export function Routines({
                   disabled={!valid || !!invalidPreset}
                   onClick={() => void action(false)}
                 >
-                  <RefreshCw size={15} className={busy ? "spin" : ""} />
-                  {busy ? "Checking…" : "Run routine check"}
+                  <RefreshCw size={15} className={singleBusy ? "spin" : ""} />
+                  {singleBusy ? "Checking…" : "Run routine check"}
                 </button>
               </div>
             </fieldset>
@@ -381,8 +657,8 @@ export function Routines({
             )}
             {expired && (
               <div className="alert" role="status">
-                Run evidence expired. Run the routine again before reviewing
-                cleanup.
+                Run again to review cleanup. This result’s evidence expired or
+                its check date is unavailable.
               </div>
             )}
             {run && (
@@ -396,9 +672,7 @@ export function Routines({
                     {run.candidates.length}{" "}
                     {run.candidates.length === 1 ? "candidate" : "candidates"}
                   </strong>
-                  <span>
-                    Checked {new Date(run.checkedAt).toLocaleString()}
-                  </span>
+                  <span>Checked {displayDate(run.checkedAt)}</span>
                 </div>
                 <p className="routine-padding routine-muted">
                   Cleanup review evidence expires after five minutes. Rerun if a
@@ -432,11 +706,11 @@ export function Routines({
                     </div>
                     <code className="routine-path">{candidate.path}</code>
                     <div className="routine-candidate-size">
-                      {candidate.logicalBytes === null
+                      {!scanId || candidate.logicalBytes === null
                         ? "Size unknown"
                         : `${candidate.estimated ? "≈ " : ""}${folderBytes(candidate.logicalBytes)}`}
                       <small>
-                        {candidate.recordedAt
+                        {scanId && candidate.recordedAt
                           ? `Recorded ${new Date(candidate.recordedAt).toLocaleString()}`
                           : "No recorded size date"}
                         {!candidate.complete ? " · Incomplete" : ""}
@@ -458,12 +732,19 @@ export function Routines({
                         <button
                           className="secondary small"
                           disabled={busy || stale || expired || !!error}
-                          onClick={() =>
+                          onClick={() => {
+                            if (
+                              !row ||
+                              busy ||
+                              stale ||
+                              !isPreparationFresh(row)
+                            )
+                              return;
                             onPrepare({
                               runId: run.id,
                               candidateId: candidate.id,
-                            })
-                          }
+                            });
+                          }}
                         >
                           Review cleanup
                         </button>
