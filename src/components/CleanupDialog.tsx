@@ -5,11 +5,13 @@ import { bytes } from "../types";
 import type { CleanupPreview, CleanupRecord } from "../types";
 export function CleanupDialog({
   request,
+  prepare,
   api,
   onClose,
   onDone,
 }: {
   request: object;
+  prepare?: (request: object) => Promise<CleanupPreview>;
   api: (url: string, body?: unknown) => Promise<any>;
   onClose: () => void;
   onDone: (result: CleanupRecord) => void;
@@ -22,7 +24,7 @@ export function CleanupDialog({
     [result, setResult] = useState<CleanupRecord | null>(null);
   useEffect(() => {
     let live = true;
-    api("cleanup/prepare", request)
+    (prepare ? prepare(request) : api("cleanup/prepare", request))
       .then((p) => {
         if (live) setPreview(p);
       })

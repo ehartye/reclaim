@@ -33,6 +33,22 @@ import { latestChange } from "../shared/opportunities.ts";
 import { inspectFolderFiles } from "./folder-scan.mjs";
 import { normalizeFolderReport } from "./folder-accounting.mjs";
 import { findIgnoredFolders } from "./ignored-folders.mjs";
+import {
+  routineDefinitions,
+  getRoutineDefinition,
+} from "./routine-policies.mjs";
+import {
+  defaultRoutinePreset,
+  loadRoutinePresets,
+  saveRoutinePreset,
+  validateRoutinePreset,
+} from "./routine-presets.mjs";
+import {
+  discoverRoutine,
+  revalidateRoutineCandidate,
+} from "./routine-discovery.mjs";
+import { getRoutineGuide } from "./routine-guides.mjs";
+import { probeNpmGuides } from "./routine-probes.mjs";
 
 const appRoot = fileURLToPath(new URL("../", import.meta.url));
 const csvCell = (value) =>
@@ -123,6 +139,9 @@ export async function createApp({
   dataDir = path.join(appRoot, ".reclaim"),
   dev = false,
   revealFolder = openFolder,
+  routineProbe = probeNpmGuides,
+  // Trusted embedding/test dependency only; HTTP bodies cannot replace cleanup.
+  cleanupFactory = createCleanup,
 } = {}) {
   await mkdir(dataDir, { recursive: true });
   let stored;
@@ -143,6 +162,7 @@ export async function createApp({
       ]),
     ),
     cleanups: stored?.cleanups || [],
+    routines: loadRoutinePresets(stored?.routines),
   };
   const token = randomBytes(32).toString("hex");
   const opportunityIndex = createOpportunityIndex({ dataDir });
@@ -180,7 +200,7 @@ export async function createApp({
     cleanupIdle = Promise.resolve(),
     resolveCleanupIdle = () => {},
     closed = false;
-  const cleanup = createCleanup({
+  const cleanup = cleanupFactory({
     protectedPaths: [appRoot, mainCheckout, dataDir],
     onRecord: async (record) => {
       if (record.status === "deleted" && record.scanId && record.findingId)
@@ -196,6 +216,58 @@ export async function createApp({
     },
   });
   const measurementBusy = () => Boolean(measurementJobs.getSnapshot().job);
+  const routineRuns = new Map();
+  const settingsKey = () => JSON.stringify(state.settings);
+  const routineInput = (operation) => {
+    try {
+      return operation();
+    } catch (cause) {
+      throw error(cause.message);
+    }
+  };
+  const exactKeys = (value, allowed) => {
+    if (
+      !value ||
+      typeof value !== "object" ||
+      Array.isArray(value) ||
+      Object.keys(value).some((key) => !allowed.includes(key))
+    )
+      throw error("Use only the supported routine parameters.");
+  };
+  const routineCatalog = () => ({
+    definitions: routineDefinitions,
+    presets: Object.fromEntries(
+      routineDefinitions.map((definition) => [
+        definition.id,
+        state.routines.presets[definition.id] ||
+          defaultRoutinePreset(definition.id, state.settings.developmentRoots),
+      ]),
+    ),
+    invalidPresets: state.routines.invalidPresets,
+  });
+  const routineBusy = async (operation) => {
+    if (job || cleanupBusy || measurementBusy())
+      throw error(
+        "Wait for the active scan, measurement or cleanup to finish.",
+        409,
+      );
+    cleanupBusy = true;
+    cleanupIdle = new Promise((resolve) => {
+      resolveCleanupIdle = resolve;
+    });
+    try {
+      return await operation();
+    } finally {
+      cleanupBusy = false;
+      resolveCleanupIdle();
+    }
+  };
+  const pruneRoutineRuns = () => {
+    for (const [id, item] of routineRuns)
+      if (item.expiresAt <= Date.now()) routineRuns.delete(id);
+    while (routineRuns.size > 100)
+      routineRuns.delete(routineRuns.keys().next().value);
+  };
   const cleanupChanges = () =>
     state.cleanups.map((record) => ({
       path: record.path,
@@ -286,6 +358,10 @@ export async function createApp({
                 }
               : null,
           });
+          return;
+        }
+        if (req.method === "GET" && url.pathname === "/api/routines") {
+          json(routineCatalog());
           return;
         }
         if (req.method === "GET" && url.pathname === "/api/development") {
@@ -419,6 +495,152 @@ export async function createApp({
         }
         if (!body || typeof body !== "object" || Array.isArray(body))
           throw error("Expected an object.");
+        if (url.pathname === "/api/routines/presets") {
+          await routineBusy(async () => {
+            const next = routineInput(() =>
+              saveRoutinePreset(state.routines, body, {
+                roots: state.settings.developmentRoots,
+              }),
+            );
+            state.routines = next;
+            for (const [id, item] of routineRuns)
+              if (item.run.routineId === body.routineId) routineRuns.delete(id);
+            await save();
+          });
+          json(routineCatalog());
+          return;
+        }
+        if (url.pathname === "/api/routines/run") {
+          exactKeys(body, ["routineId", "parameters", "scanId"]);
+          const definition = routineInput(() =>
+            getRoutineDefinition(body.routineId),
+          );
+          if (body.parameters !== undefined)
+            exactKeys(body.parameters, [
+              "minimumBytes",
+              "minimumAgeDays",
+              "roots",
+              "policyVersion",
+            ]);
+          if (body.scanId !== undefined && typeof body.scanId !== "string")
+            throw error("Choose a known scan.");
+          const run = await routineBusy(async () => {
+            const started = Date.now(),
+              initialSettings = settingsKey();
+            const settings = structuredClone(state.settings);
+            const saved = state.routines.presets[definition.id];
+            if (
+              !saved &&
+              state.routines.invalidPresets[definition.id] &&
+              body.parameters === undefined
+            )
+              throw error(
+                "Correct and save this routine's invalid preset before running.",
+              );
+            const parameters = routineInput(() =>
+              validateRoutinePreset({
+                ...(saved ||
+                  defaultRoutinePreset(
+                    definition.id,
+                    settings.developmentRoots,
+                  )),
+                ...(body.parameters || {}),
+                routineId: definition.id,
+              }),
+            );
+            const report =
+              body.scanId === undefined
+                ? undefined
+                : await loadScan(body.scanId);
+            const probe = definition.id.startsWith("npm-")
+              ? await routineProbe()
+              : { scopes: [], notices: [] };
+            const remaining = 30000 - (Date.now() - started);
+            if (remaining <= 0)
+              throw error(
+                "Routine discovery budget elapsed. Narrow the scope and run again.",
+                409,
+              );
+            const run = await discoverRoutine({
+              routineId: definition.id,
+              parameters,
+              report,
+              settings,
+              protectedReason: cleanup.protectionReason,
+              budgetMs: remaining,
+              ...(definition.id.startsWith("npm-") && probe.scopes.length
+                ? {
+                    guideScopes: probe.scopes.filter(
+                      (scope) => scope.routineId === definition.id,
+                    ),
+                  }
+                : {}),
+              guideForCandidate: (routineId, target, scope) =>
+                getRoutineGuide(routineId, {
+                  path: target,
+                  qualification: scope.qualification,
+                }),
+            });
+            if (closed || settingsKey() !== initialSettings)
+              throw error(
+                "Settings changed during discovery. Run the routine again.",
+                409,
+              );
+            run.notices.push(...probe.notices);
+            pruneRoutineRuns();
+            routineRuns.set(run.id, { run, expiresAt: Date.now() + 300000 });
+            pruneRoutineRuns();
+            return run;
+          });
+          json(run);
+          return;
+        }
+        if (url.pathname === "/api/routines/candidates/prepare") {
+          exactKeys(body, ["runId", "candidateId"]);
+          if (
+            typeof body.runId !== "string" ||
+            typeof body.candidateId !== "string"
+          )
+            throw error("Choose a known routine candidate.");
+          const preview = await routineBusy(async () => {
+            pruneRoutineRuns();
+            const known = routineRuns.get(body.runId);
+            if (!known)
+              throw error(
+                "Routine evidence is stale or unknown. Run the routine again.",
+                409,
+              );
+            const initialSettings = settingsKey();
+            let target;
+            try {
+              target = await revalidateRoutineCandidate(
+                known.run,
+                body.candidateId,
+                {
+                  settings: state.settings,
+                  protectedReason: cleanup.protectionReason,
+                },
+              );
+            } catch (cause) {
+              throw error(cause.message, 409);
+            }
+            if (settingsKey() !== initialSettings)
+              throw error("Settings changed. Run the routine again.", 409);
+            const preview = await cleanup.prepare(
+              target.path,
+              target.kind,
+              target.context,
+            );
+            if (settingsKey() !== initialSettings)
+              throw error(
+                "Settings changed during preparation. Run the routine again.",
+                409,
+              );
+            return preview;
+          });
+          json(preview);
+          return;
+        }
         if (url.pathname === "/api/folders/ignored") {
           if (
             !Number.isSafeInteger(body.minimumBytes) ||
@@ -674,6 +896,7 @@ export async function createApp({
           if (cleanupBusy)
             throw error("Wait for the cleanup inspection to finish.", 409);
           state.settings = { ...state.settings, ...validate(body, true) };
+          routineRuns.clear();
           if (
             body.developmentRoots !== undefined ||
             body.exclusions !== undefined ||

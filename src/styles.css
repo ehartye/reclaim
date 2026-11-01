@@ -3247,6 +3247,15 @@ dialog::backdrop {
     clip-path: inset(50%);
     white-space: nowrap;
   }
+  .sidebar {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .sidebar nav {
+    flex: 1 1 100%;
+    min-width: 0;
+    overflow-x: auto;
+  }
 }
 .drive-meter {
   height: 4px;
@@ -3780,4 +3789,235 @@ dialog::backdrop {
 
 .scan-form .restore-note p {
   color: #53677d;
+}
+.routines-workspace {
+  display: grid;
+  grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
+  gap: 24px;
+  align-items: start;
+}
+.routine-directory {
+  overflow: hidden;
+}
+.routine-choice {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 7px;
+  width: 100%;
+  padding: 17px 20px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  border-left: 3px solid transparent;
+  background: white;
+  text-align: left;
+  color: var(--ink);
+  cursor: pointer;
+}
+.routine-choice.selected {
+  border-left-color: var(--blue);
+  background: #edf3ff;
+}
+.routine-choice.selected small {
+  color: #526176;
+}
+.routine-choice:hover {
+  background: var(--frost);
+}
+.routine-choice strong {
+  font-size: 13px;
+}
+.routine-choice small,
+.routine-muted {
+  color: var(--muted);
+  font-size: 12px;
+}
+.routine-mode {
+  display: inline-flex;
+  width: fit-content;
+  padding: 4px 7px;
+  border-radius: 4px;
+  font-size: 10px;
+  line-height: 1.2;
+  font-weight: 600;
+  background: #edf0f5;
+  color: #526176;
+}
+.routine-mode.in-app {
+  color: #126b61;
+  background: #e5f4ef;
+}
+.routine-mode.guided {
+  color: #325c9b;
+  background: #eaf1fc;
+}
+.routine-detail {
+  min-width: 0;
+}
+.routine-detail pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 11px;
+}
+.routine-detail .panel-heading h2 {
+  margin-top: 9px;
+}
+.routine-padding {
+  padding: 18px 24px;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.routine-padding p {
+  margin: 0 0 10px;
+}
+.routine-padding p:last-child {
+  margin-bottom: 0;
+}
+.routine-controls {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  padding: 18px 24px;
+  margin: 0;
+  border: 0;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+.routine-controls legend {
+  padding: 0 24px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.routine-controls label {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.routine-controls select,
+.routine-controls textarea,
+.routine-controls > label > input {
+  width: 100%;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid #b7c5d6;
+  border-radius: 6px;
+  background: white;
+  color: var(--ink);
+  font: inherit;
+}
+.routine-roots,
+.routine-actions {
+  grid-column: 1 / -1;
+}
+.routine-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.routine-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  background: var(--frost);
+  border-top: 1px solid var(--line);
+}
+.routine-candidate {
+  padding: 22px 24px;
+  border-top: 1px solid var(--line);
+  overflow-wrap: anywhere;
+}
+.routine-candidate-heading {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 9px;
+  font-size: 13px;
+}
+.routine-path {
+  display: block;
+  margin: 12px 0;
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+.routine-candidate-size {
+  font-size: 20px;
+  font-weight: 600;
+  margin: 12px 0;
+}
+.routine-candidate-size small {
+  display: block;
+  margin-top: 5px;
+  font-size: 11px;
+  color: var(--muted);
+  font-weight: 400;
+}
+.routine-candidate p {
+  font-size: 12px;
+  line-height: 1.7;
+}
+.routine-guide {
+  margin-top: 18px;
+  border-top: 1px solid var(--line);
+  padding-top: 15px;
+  font-size: 12px;
+}
+.routine-guide summary {
+  cursor: pointer;
+  color: var(--blue);
+}
+.routine-guide summary svg {
+  vertical-align: middle;
+  margin-right: 6px;
+}
+.routine-guide li {
+  margin-bottom: 10px;
+  line-height: 1.7;
+}
+.routine-guide a {
+  display: block;
+  margin-top: 10px;
+}
+.routine-command {
+  background: var(--frost);
+  padding: 14px;
+  margin: 12px 0;
+  border-radius: 6px;
+}
+.routine-command code {
+  display: block;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  margin: 12px 0;
+}
+.routine-choice:focus-visible,
+.routine-guide summary:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: -3px;
+}
+@media (max-width: 950px) {
+  .routines-workspace {
+    grid-template-columns: 1fr;
+  }
+  .routine-directory {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .routine-directory .panel-heading {
+    grid-column: 1 / -1;
+  }
+}
+@media (max-width: 560px) {
+  .routine-controls {
+    grid-template-columns: 1fr;
+  }
+  .routine-choice {
+    padding: 13px 12px;
+  }
+  .routine-candidate,
+  .routine-padding {
+    padding: 18px;
+  }
 }

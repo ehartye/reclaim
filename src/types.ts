@@ -130,8 +130,41 @@ export type Settings = {
   skipCloud: boolean;
 };
 export type { Review } from "../shared/review.ts";
+export type {
+  RoutineDefinition,
+  RoutinePreset,
+  RoutinePresetState,
+} from "../shared/routines.ts";
+export type RoutineGuide = {
+  title: string;
+  mode: import("../shared/routines.ts").RoutineMode;
+  qualified: boolean;
+  steps: string[];
+  commands: {
+    label: string;
+    command: string;
+    scope: string;
+    mutates: boolean;
+    effects: string;
+    optional: boolean;
+  }[];
+  notices: string[];
+  evidence: string[];
+};
+export type RoutineCandidate =
+  import("../shared/routines.ts").RoutineCandidate & { guide?: RoutineGuide };
+export type RoutineRun = Omit<
+  import("../shared/routines.ts").RoutineRun,
+  "candidates"
+> & { candidates: RoutineCandidate[] };
+export type RoutineCatalog = {
+  definitions: import("../shared/routines.ts").RoutineDefinition[];
+  presets: Record<string, import("../shared/routines.ts").RoutinePreset>;
+  invalidPresets: import("../shared/routines.ts").RoutinePresetState["invalidPresets"];
+};
 import type { Review } from "../shared/review.ts";
 export type State = {
+  routines?: import("../shared/routines.ts").RoutinePresetState;
   measurementJob?: MeasurementJob | null;
   cleanupBusy: boolean;
   cleanups: CleanupRecord[];

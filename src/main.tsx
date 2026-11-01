@@ -7,6 +7,7 @@ import { CoverageDialog } from "./components/CoverageDialog";
 import { CleanupDialog } from "./components/CleanupDialog";
 import { Development } from "./components/Development";
 import { LargeFolders } from "./components/LargeFolders";
+import { Routines } from "./components/Routines";
 import { useEffect, useRef, useState, useMemo } from "react";
 import { createRoot } from "react-dom/client";
 import {
@@ -59,6 +60,7 @@ import "./styles.css";
 
 type View =
   | "Folders"
+  | "Routines"
   | "Overview"
   | "Development"
   | "Opportunities"
@@ -93,6 +95,10 @@ function App() {
     operation?: string;
   }>({});
   const [cleanupRequest, setCleanupRequest] = useState<object | null>(null);
+  const [routineCleanupRequest, setRoutineCleanupRequest] = useState<{
+    runId: string;
+    candidateId: string;
+  } | null>(null);
   const [scanPreset, setScanPreset] = useState<{
     root?: string;
     operation?: string;
@@ -470,6 +476,7 @@ function App() {
           {(
             [
               ["Folders", FolderOpen],
+              ["Routines", ShieldCheck],
               ...(!scan.folderSizing
                 ? ([
                     ["Overview", LayoutDashboard],
@@ -675,6 +682,8 @@ function App() {
                       "Follow the space. Explore folders from the biggest down.",
                     Folders:
                       "Every folder above your size threshold, across the selected search area.",
+                    Routines:
+                      "Repeat a useful cleanup review. Know the scope and the cost of rebuilding.",
                     Duplicates:
                       "Identical contents, different locations. Keep the copies you need.",
                     History: "See how your storage changes over time.",
@@ -1414,6 +1423,14 @@ function App() {
               )}
             </section>
           )}
+          {view === "Routines" && (
+            <Routines
+              key={isSample ? "sample" : scan.id}
+              api={api}
+              scanId={isSample ? undefined : scan.id}
+              onPrepare={setRoutineCleanupRequest}
+            />
+          )}
           {view === "Development" && (
             <Development
               onSettingsSaved={setSettings}
@@ -1790,11 +1807,19 @@ function App() {
       {coverage && (
         <CoverageDialog scan={scan} onClose={() => setCoverage(false)} />
       )}
-      {cleanupRequest && (
+      {(cleanupRequest || routineCleanupRequest) && (
         <CleanupDialog
-          request={cleanupRequest}
+          request={routineCleanupRequest || cleanupRequest!}
+          prepare={
+            routineCleanupRequest
+              ? (request) => api("routines/candidates/prepare", request)
+              : undefined
+          }
           api={api}
-          onClose={() => setCleanupRequest(null)}
+          onClose={() => {
+            setCleanupRequest(null);
+            setRoutineCleanupRequest(null);
+          }}
           onDone={(result) => {
             void api("state")
               .then((next: State) => {

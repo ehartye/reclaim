@@ -16,6 +16,16 @@ Quick scans may reuse complete dated totals for small branches. Reused totals ar
 
 Only outermost matching directories are returned, preventing parent/child double counting. Ignore rules are current observations; logical sizes remain dated scan evidence. A preliminary generated-folder description controls whether a row can request cleanup review, with protected or unknown outputs remaining review-only. Ignore status never authorizes deletion. The browser remembers this operation and its threshold; rerunning refreshes Git evidence, while a fresh foundational scan refreshes size evidence.
 
+## Repeatable cleanup routines
+
+The shared routine catalog describes named discovery operations, execution modes, recovery costs, evidence links and versioned parameter defaults. `GET /api/routines` returns definitions, validated saved presets and invalid-preset diagnostics. The interface displays retained invalid parameters and requires a corrected, validated save before running. `POST /api/routines/presets` persists a validated preset while retaining invalid saved data for correction. Default minimum size is 500,000,000 bytes, compared strictly; age hints are off and never establish that data is unused.
+
+`POST /api/routines/run` accepts a routine ID, review parameters and an optional known scan ID. It evaluates recorded logical sizes and current project/role evidence, preserving unknown sizes, estimate dates and partial coverage. Cache roles, managed stores and global maintenance routines remain separate from generated project output. Guidance is qualified against observed scope and activity; unresolved activity yields documentation-only steps. Commands are returned as reviewable text and never executed by the service or interface. DDC and Zen storage have separate roles and no generic purge action.
+
+Each run stores bounded, expiring server-owned candidate IDs. `POST /api/routines/candidates/prepare` accepts only a run ID and candidate ID, rechecks stored parameters and current eligibility, then delegates eligible generated/worktree candidates to the existing cleanup preview. The browser cannot submit a target path or an execution mode through this route. Preset changes invalidate prior runs; changed controls disable preparation and saving clears the visible results. Guided and review-only candidates never offer in-app preparation.
+
+The Routines interface is available beside Folders for both current and legacy report shapes. It persists parameters through the service, labels historical sizes and recovery costs, and exposes owner documentation before and after discovery. The cleanup dialog accepts an optional preparation function for routine IDs; legacy callers retain their original `/api/cleanup/prepare` behavior. Execution remains the existing token-bound preview/confirmation operation.
+
 ## Cleanup evidence
 
 Generated folders and worktrees are candidates until a fresh inspection verifies eligibility. A name, age or recorded size alone does not authorize deletion. Supported generated folders require project and restoration evidence. Protected paths, tracked files, links, cloud placeholders and unsafe Git states are blocked.
