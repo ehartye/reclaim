@@ -113,7 +113,10 @@ export async function findIgnoredFolders(
     )
     .sort((a, b) => b.bytes - a.bytes);
   let complete = true,
-    checkedDirectories = 0;
+    checkedDirectories = 0,
+    nonRepositoryDirectories = 0,
+    gitCheckedDirectories = 0,
+    repositoriesChecked = 0;
   async function owner(directory) {
     const visited = [];
     let root = null;
@@ -156,7 +159,10 @@ export async function findIgnoredFolders(
       }
       const root = await owner(d.path);
       checkedDirectories++;
-      if (!root || root === d.path) continue;
+      if (!root || root === d.path) {
+        nonRepositoryDirectories++;
+        continue;
+      }
       const list = groups.get(root) || [];
       list.push(d);
       groups.set(root, list);
@@ -171,47 +177,61 @@ export async function findIgnoredFolders(
   )
     complete = false;
   const matches = [];
-  for (const [root, directories] of groups) {
-    if (Date.now() > deadline) {
-      complete = false;
-      break;
-    }
-    try {
-      const actualRoot = (
-        await git(root, "rev-parse", "--show-toplevel")
-      ).trim();
-      if (
-        path.resolve(actualRoot).toLowerCase() !==
-        path.resolve(root).toLowerCase()
-      )
-        throw new Error(
-          "Repository ownership changed. Run the operation again.",
-        );
-      const ignored = await checkIgnores(
-        root,
-        directories.map(
-          (d) => path.relative(root, d.path).split(path.sep).join("/") + "/",
-        ),
-      );
-      const byPath = new Map(directories.map((d) => [path.resolve(d.path), d]));
-      for (const rule of ignored) {
-        const directory = byPath.get(path.resolve(root, rule.relative));
-        if (directory)
-          matches.push({
-            ...directory,
-            repository: root,
-            ignore: {
-              source: rule.source,
-              line: rule.line,
-              pattern: rule.pattern,
-            },
-          });
+  const repositories = [...groups];
+  let nextRepository = 0;
+  async function checkRepositories() {
+    while (nextRepository < repositories.length) {
+      if (Date.now() > deadline) {
+        complete = false;
+        return;
       }
-    } catch (e) {
-      errors.push({ path: root, reason: e.message });
-      complete = false;
+      const [root, directories] = repositories[nextRepository++];
+      try {
+        const actualRoot = (
+          await git(root, "rev-parse", "--show-toplevel")
+        ).trim();
+        if (
+          path.resolve(actualRoot).toLowerCase() !==
+          path.resolve(root).toLowerCase()
+        )
+          throw new Error(
+            "Repository ownership changed. Run the operation again.",
+          );
+        const ignored = await checkIgnores(
+          root,
+          directories.map(
+            (d) => path.relative(root, d.path).split(path.sep).join("/") + "/",
+          ),
+        );
+        const byPath = new Map(
+          directories.map((d) => [path.resolve(d.path), d]),
+        );
+        gitCheckedDirectories += directories.length;
+        repositoriesChecked++;
+        for (const rule of ignored) {
+          const directory = byPath.get(path.resolve(root, rule.relative));
+          if (directory)
+            matches.push({
+              ...directory,
+              repository: root,
+              ignore: {
+                source: rule.source,
+                line: rule.line,
+                pattern: rule.pattern,
+              },
+            });
+        }
+      } catch (e) {
+        errors.push({ path: root, reason: e.message });
+        complete = false;
+      }
     }
   }
+  await Promise.all(
+    Array.from({ length: Math.min(4, repositories.length) }, () =>
+      checkRepositories(),
+    ),
+  );
   // One row per outermost match, even across nested repository boundaries.
   const outermost = [];
   for (const match of matches.sort((a, b) => a.path.length - b.path.length)) {
@@ -219,38 +239,48 @@ export async function findIgnoredFolders(
       outermost.push(match);
   }
   const targets = [];
-  for (const match of outermost) {
-    let cleanupSupported = false,
-      reason =
-        protectedReason(match.path) ||
-        "Ignored by Git; review its contents and restoration steps before cleanup.";
-    try {
-      if (Date.now() > deadline) {
-        complete = false;
-        throw new Error(
-          "Inspection budget reached. Run again with a narrower search area or higher threshold.",
-        );
-      }
-      const tracked = await git(
-        match.repository,
-        "ls-files",
-        "-z",
-        "--",
-        path.relative(match.repository, match.path),
-      );
-      if (tracked) reason = "Contains tracked files. Preserve project content.";
-      else if (!protectedReason(match.path)) {
-        const description = await describeGenerated(match.path);
-        if (description) {
-          cleanupSupported = true;
-          reason = description.restore;
+  let nextMatch = 0;
+  async function checkCleanupEvidence() {
+    while (nextMatch < outermost.length) {
+      const match = outermost[nextMatch++];
+      let cleanupSupported = false,
+        reason =
+          protectedReason(match.path) ||
+          "Ignored by Git; review its contents and restoration steps before cleanup.";
+      try {
+        if (Date.now() > deadline) {
+          complete = false;
+          throw new Error(
+            "Inspection budget reached. Run again with a narrower search area or higher threshold.",
+          );
         }
+        const tracked = await git(
+          match.repository,
+          "ls-files",
+          "-z",
+          "--",
+          path.relative(match.repository, match.path),
+        );
+        if (tracked)
+          reason = "Contains tracked files. Preserve project content.";
+        else if (!protectedReason(match.path)) {
+          const description = await describeGenerated(match.path);
+          if (description) {
+            cleanupSupported = true;
+            reason = description.restore;
+          }
+        }
+      } catch (e) {
+        reason = "Cleanup evidence is unavailable: " + e.message;
       }
-    } catch (e) {
-      reason = "Cleanup evidence is unavailable: " + e.message;
+      targets.push({ ...match, cleanupSupported, reason });
     }
-    targets.push({ ...match, cleanupSupported, reason });
   }
+  await Promise.all(
+    Array.from({ length: Math.min(4, outermost.length) }, () =>
+      checkCleanupEvidence(),
+    ),
+  );
   return {
     scanId: report.id,
     recordedAt: report.completedAt,
@@ -262,8 +292,9 @@ export async function findIgnoredFolders(
     coverage: {
       complete: complete && skipped.length === 0,
       candidateCount: candidates.length,
-      checkedDirectories,
+      checkedDirectories: nonRepositoryDirectories + gitCheckedDirectories,
       repositories: groups.size,
+      repositoriesChecked,
       directoryLimit: maxDirectories,
     },
     errors,
