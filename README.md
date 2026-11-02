@@ -42,7 +42,9 @@ Worktree cleanup uses `git worktree remove` without force and retains branches. 
 
 Previous full-file reports remain readable in History with their original recommendations, map, duplicate evidence, review queue, resolved/dismissed dispositions and Development tools. These compatibility views retain their earlier file/read budgets; those budgets do not cap the foundational folder scan. Existing saved reports and review selections are preserved. Marking an item resolved is bookkeeping and does not delete data or measure recovered storage.
 
-The service binds to loopback and protects writes with same-origin checks and a per-session token. There is no telemetry or external analysis service. Links, reparse points, offline/cloud placeholders and protected drive-root system folders are skipped; OneDrive is excluded by default. Long and Unicode paths are supported. Filesystem observations are not transactional snapshots.
+The service binds to loopback and protects writes with its existing Host/Origin checks and a per-session token. Malformed requests receive bounded errors without ending the service. Receipt limits are 15 seconds for headers and 30 seconds for receiving a request, with five-second keep-alive; a fully received operation can continue beyond the receipt deadline. There is no telemetry or external analysis service. Links, reparse points, offline/cloud placeholders and protected drive-root system folders are skipped; OneDrive is excluded by default. Long and Unicode paths are supported. Filesystem observations are not transactional snapshots.
+
+The fixture-only [cleanup identity](docs/experiments/cleanup-identity-qualification.md) and [owner-lifetime](docs/experiments/data-owner-lifetime.md) experiments add no production permission or state-store lock. The measured cleanup strategies were Invalidated; the owner-reference candidate is Partial. Existing cleanup path-race and multi-instance state limitations remain open while the native qualification gates are unmet.
 
 ```powershell
 npm test        # native filesystem, worker, cache, API and accounting checks
