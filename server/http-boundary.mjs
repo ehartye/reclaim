@@ -1,6 +1,31 @@
 const TARGET_BYTES = 8192;
 const BODY_BYTES = 128000;
 
+export function httpTimeoutOptions(overrides = {}) {
+  const options = {
+    headersTimeout: 15000,
+    requestTimeout: 30000,
+    keepAliveTimeout: 5000,
+    connectionsCheckingInterval: 1000,
+  };
+  if (
+    !overrides ||
+    typeof overrides !== "object" ||
+    Array.isArray(overrides) ||
+    Object.keys(overrides).some((key) => !Object.hasOwn(options, key))
+  )
+    throw new Error("Invalid HTTP timeout settings.");
+  Object.assign(options, overrides);
+  if (
+    Object.values(options).some(
+      (value) => !Number.isSafeInteger(value) || value <= 0,
+    ) ||
+    options.headersTimeout > options.requestTimeout
+  )
+    throw new Error("Invalid HTTP timeout settings.");
+  return options;
+}
+
 export const requestError = (message, status = 400, code = "INVALID_REQUEST") =>
   Object.assign(new Error(message), { status, publicCode: code });
 
@@ -20,7 +45,7 @@ export function requestUrl(target, origin) {
     const decoded = decodeURIComponent(target);
     if (/[\x00-\x1f\x7f]/.test(decoded)) throw new URIError();
     const url = new URL(target, origin);
-    if (url.origin !== origin) throw new URIError();
+    if (url.origin !== new URL(origin).origin) throw new URIError();
     return url;
   } catch {
     throw requestError("Invalid request target.", 400, "INVALID_TARGET");

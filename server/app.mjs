@@ -5,6 +5,7 @@ import {
   requestUrl,
   sendJson,
   respondToError,
+  httpTimeoutOptions,
 } from "./http-boundary.mjs";
 import { readFile, writeFile, mkdir, rename, lstat } from "node:fs/promises";
 import { homedir } from "node:os";
@@ -152,7 +153,10 @@ export async function createApp({
   routineProbe = probeNpmGuides,
   // Trusted embedding/test dependency only; HTTP bodies cannot replace cleanup.
   cleanupFactory = createCleanup,
+  // Trusted embedding/test settings only; HTTP input cannot change deadlines.
+  httpTimeouts,
 } = {}) {
+  const serverOptions = httpTimeoutOptions(httpTimeouts);
   await mkdir(dataDir, { recursive: true });
   let stored;
   try {
@@ -323,7 +327,10 @@ export async function createApp({
       appType: "spa",
     });
   }
-  const server = http.createServer(containRequest(handleRequest));
+  const server = http.createServer(
+    { ...serverOptions, maxHeaderSize: 16384 },
+    containRequest(handleRequest),
+  );
   async function handleRequest(req, res) {
     try {
       const port = server.address()?.port;
