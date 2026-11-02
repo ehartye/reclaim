@@ -353,7 +353,10 @@ test("fresh routine candidates propagate cleanup inspection limits without previ
     failure = message;
     const response = await f.post("routines/candidates/prepare", request);
     assert.equal(response.status, 500);
-    assert.deepEqual(await response.json(), { error: message });
+    assert.deepEqual(await response.json(), {
+      error: message,
+      code: "INTERNAL_ERROR",
+    });
     assert.equal(prepareCalls.at(-1)[0], f.dist);
     assert.equal(prepareCalls.at(-1)[1], "generated");
     assert.deepEqual(prepareCalls.at(-1)[2], { scanId: f.scanId });

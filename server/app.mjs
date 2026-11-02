@@ -1,4 +1,11 @@
 import http from "node:http";
+import {
+  containRequest,
+  readRequestBody,
+  requestUrl,
+  sendJson,
+  respondToError,
+} from "./http-boundary.mjs";
 import { readFile, writeFile, mkdir, rename, lstat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { randomBytes } from "node:crypto";
@@ -58,7 +65,10 @@ const csvCell = (value) =>
     .replaceAll('"', '""') +
   '"';
 const error = (message, status = 400) =>
-  Object.assign(new Error(message), { status });
+  Object.assign(new Error(message), {
+    status,
+    publicCode: status >= 500 ? "INTERNAL_ERROR" : "INVALID_REQUEST",
+  });
 
 function validate(input, settings = false) {
   const out = {};
@@ -313,31 +323,26 @@ export async function createApp({
       appType: "spa",
     });
   }
-  const server = http.createServer(async (req, res) => {
-    const port = server.address()?.port;
-    const allowedHosts = new Set([`127.0.0.1:${port}`, `localhost:${port}`]);
-    if (!allowedHosts.has(req.headers.host)) {
-      res.writeHead(403);
-      res.end("Invalid host");
-      return;
-    }
-    const origin = `http://${req.headers.host}`;
-    if (req.headers.origin && req.headers.origin !== origin) {
-      res.writeHead(403);
-      res.end("Foreign origin refused");
-      return;
-    }
-    res.setHeader("X-Content-Type-Options", "nosniff");
-    res.setHeader("Referrer-Policy", "no-referrer");
-    const url = new URL(req.url, origin);
-    const json = (data, status = 200) => {
-      res.writeHead(status, {
-        "Content-Type": "application/json",
-        "Cache-Control": "no-store",
-      });
-      res.end(JSON.stringify(data));
-    };
+  const server = http.createServer(containRequest(handleRequest));
+  async function handleRequest(req, res) {
     try {
+      const port = server.address()?.port;
+      const allowedHosts = new Set([`127.0.0.1:${port}`, `localhost:${port}`]);
+      if (!allowedHosts.has(req.headers.host)) {
+        res.writeHead(403);
+        res.end("Invalid host");
+        return;
+      }
+      const origin = `http://${req.headers.host}`;
+      if (req.headers.origin && req.headers.origin !== origin) {
+        res.writeHead(403);
+        res.end("Foreign origin refused");
+        return;
+      }
+      res.setHeader("X-Content-Type-Options", "nosniff");
+      res.setHeader("Referrer-Policy", "no-referrer");
+      const url = requestUrl(req.url, origin);
+      const json = (data, status = 200) => sendJson(res, data, status);
       if (closed) throw error("Reclaim is shutting down.", 503);
       if (url.pathname.startsWith("/api/")) {
         res.setHeader("Cache-Control", "no-store");
@@ -482,11 +487,7 @@ export async function createApp({
           throw error("Session token missing. Reload the app.", 403);
         if (!req.headers["content-type"]?.startsWith("application/json"))
           throw error("Expected JSON.");
-        let raw = "";
-        for await (const chunk of req) {
-          raw += chunk;
-          if (raw.length > 128000) throw error("Request too large.", 413);
-        }
+        const raw = await readRequestBody(req);
         let body;
         try {
           body = JSON.parse(raw);
@@ -1047,9 +1048,39 @@ export async function createApp({
         throw error("Endpoint not found.", 404);
       }
       if (vite) {
-        vite.middlewares(req, res, () => {
-          res.writeHead(404);
-          res.end();
+        await new Promise((resolve, reject) => {
+          const cleanup = () => {
+            res.off("finish", done);
+            res.off("close", done);
+          };
+          const done = () => {
+            cleanup();
+            resolve();
+          };
+          res.once("finish", done);
+          res.once("close", done);
+          try {
+            vite.middlewares(req, res, (cause) => {
+              if (cause) {
+                cleanup();
+                reject(cause);
+                return;
+              }
+              try {
+                if (!res.headersSent && !res.writableEnded && !res.destroyed) {
+                  res.writeHead(404);
+                  res.end();
+                }
+              } catch (failure) {
+                cleanup();
+                reject(failure);
+              }
+            });
+          } catch (cause) {
+            res.off("finish", done);
+            res.off("close", done);
+            reject(cause);
+          }
         });
         return;
       }
@@ -1080,10 +1111,10 @@ export async function createApp({
           mime[path.extname(target)] || "application/octet-stream",
       });
       res.end(contents);
-    } catch (e) {
-      json({ error: e.message }, e.status || 500);
+    } catch (cause) {
+      respondToError(req, res, cause);
     }
-  });
+  }
   async function closeApp() {
     if (closed) return;
     closed = true;
