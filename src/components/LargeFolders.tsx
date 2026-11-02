@@ -11,6 +11,24 @@ import {
 } from "lucide-react";
 import { basename, parent } from "../types";
 import type { Scan, Directory, FolderInspection } from "../types";
+import type { IgnoredFolderResult } from "../types";
+import { IgnoredFolders } from "./IgnoredFolders";
+import { folderBytes } from "../folder-format";
+function savedIgnoredPreference(): { active: boolean; minimum: number } | null {
+  try {
+    const value = JSON.parse(
+      localStorage.getItem("reclaim.ignored-folders") || "null",
+    );
+    return value &&
+      Number.isFinite(value.minimum) &&
+      value.minimum >= 0 &&
+      value.minimum <= 1024 ** 5 / 1000000
+      ? { active: value.active === true, minimum: value.minimum }
+      : null;
+  } catch {
+    return null;
+  }
+}
 const date = (value: string) =>
   new Date(value).toLocaleString(undefined, {
     year: "numeric",
@@ -19,19 +37,10 @@ const date = (value: string) =>
     hour: "numeric",
     minute: "2-digit",
   });
-export function folderBytes(value: number) {
-  const units = ["B", "kB", "MB", "GB", "TB"];
-  let n = value,
-    i = 0;
-  while (n >= 1000 && i < units.length - 1) {
-    n /= 1000;
-    i++;
-  }
-  return `${n.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${units[i]}`;
-}
 const pageSize = 50;
 const categoryNames: Record<string, string[]> = {
   builds: [
+    "intermediate",
     "build",
     "dist",
     "out",
@@ -69,6 +78,7 @@ export function LargeFolders({
   onReveal,
   onInspect,
   onPrepare,
+  onFindIgnored,
   changedSinceScan = false,
 }: {
   scan: Scan;
@@ -76,13 +86,19 @@ export function LargeFolders({
   onReveal: (path: string) => void;
   onInspect: (path: string, offset?: number) => Promise<FolderInspection>;
   onPrepare?: (request: { scanId: string; directoryPath: string }) => void;
+  onFindIgnored?: (minimumBytes: number) => Promise<IgnoredFolderResult>;
   changedSinceScan?: boolean;
 }) {
+  const [preference] = useState(savedIgnoredPreference);
   const [minimum, setMinimum] = useState(
-      (scan.folderSizing?.minimumBytes ?? 500000000) / 1000000,
+      preference?.active
+        ? preference.minimum
+        : (scan.folderSizing?.minimumBytes ?? 500000000) / 1000000,
     ),
     [query, setQuery] = useState(""),
-    [category, setCategory] = useState("all"),
+    [category, setCategory] = useState(
+      preference?.active && onFindIgnored ? "ignored" : "all",
+    ),
     [expanded, setExpanded] = useState<Set<string>>(new Set()),
     [filterCollapsed, setFilterCollapsed] = useState<Set<string>>(new Set()),
     [limits, setLimits] = useState<Record<string, number>>({}),
@@ -421,6 +437,17 @@ export function LargeFolders({
               value={Number.isNaN(minimum) ? "" : minimum}
               onChange={(e) => {
                 setMinimum(e.target.valueAsNumber);
+                if (category === "ignored") {
+                  try {
+                    localStorage.setItem(
+                      "reclaim.ignored-folders",
+                      JSON.stringify({
+                        active: true,
+                        minimum: e.target.valueAsNumber,
+                      }),
+                    );
+                  } catch {}
+                }
                 setLimits({});
               }}
             />
@@ -450,6 +477,15 @@ export function LargeFolders({
             value={category}
             onChange={(e) => {
               setCategory(e.target.value);
+              try {
+                localStorage.setItem(
+                  "reclaim.ignored-folders",
+                  JSON.stringify({
+                    active: e.target.value === "ignored",
+                    minimum,
+                  }),
+                );
+              } catch {}
               setLimits({});
               setFilterCollapsed(new Set());
             }}
@@ -459,6 +495,9 @@ export function LargeFolders({
             <option value="dependencies">Dependencies</option>
             <option value="caches">Caches</option>
             <option value="worktrees">Git worktrees</option>
+            {onFindIgnored && (
+              <option value="ignored">Git-ignored folders</option>
+            )}
           </select>
         </label>
       </div>
@@ -467,72 +506,90 @@ export function LargeFolders({
           Enter a size from 0 to {folderBytes(1024 ** 5)}.
         </div>
       )}
-      <div className="folder-total-summary" role="status">
-        <strong>
-          {valid ? tree.matches.size.toLocaleString() : 0} matching folders
-        </strong>
-        <span>{scan.fileCount.toLocaleString()} file entries in totals</span>
-        <span>
-          Search area: {scan.folderSizing?.estimated ? "≈ " : ""}
-          {folderBytes(scan.totalBytes)}
-        </span>
-      </div>
-      <p className="folder-accounting">
-        500 MB = 500,000,000 bytes. Parent totals include children; overlapping
-        totals are never added. These are logical sizes, not deletion savings.
-        Category filters use folder names and Git markers; they do not establish
-        safe deletion.
-      </p>
-      {scan.folderSizing?.estimated && (
-        <div className="alert">
-          <span>
-            <strong>Estimated from saved branch totals.</strong>{" "}
-            {scan.folderSizing.cachedBranchCount} small branches reused
-            {scan.folderSizing.cacheDate
-              ? ` from ${date(scan.folderSizing.cacheDate)}`
-              : ""}
-            . Changes inside skipped branches may be missing. Run a scan with
-            Quick scan unchecked for fresh totals.
-          </span>
-        </div>
+      {category === "ignored" && onFindIgnored && (
+        <IgnoredFolders
+          scanId={scan.id}
+          minimumBytes={Math.round(minimum * 1000000)}
+          query={query}
+          valid={valid}
+          onFind={onFindIgnored}
+          onReveal={onReveal}
+          onPrepare={onPrepare}
+        />
       )}
-      {!!scan.folderSizing?.prunedDirectoryCount && (
-        <p className="folder-accounting">
-          {scan.folderSizing.prunedDirectoryCount.toLocaleString()} known
-          directories pruned in Quick scan. Lowering this view’s threshold
-          cannot recover skipped descendants; use a fresh scan to measure them.
-        </p>
+      {category !== "ignored" && (
+        <>
+          <div className="folder-total-summary" role="status">
+            <strong>
+              {valid ? tree.matches.size.toLocaleString() : 0} matching folders
+            </strong>
+            <span>
+              {scan.fileCount.toLocaleString()} file entries in totals
+            </span>
+            <span>
+              Search area: {scan.folderSizing?.estimated ? "≈ " : ""}
+              {folderBytes(scan.totalBytes)}
+            </span>
+          </div>
+          <p className="folder-accounting">
+            500 MB = 500,000,000 bytes. Parent totals include children;
+            overlapping totals are never added. These are logical sizes, not
+            deletion savings. Category filters use folder names and Git markers;
+            they do not establish safe deletion.
+          </p>
+          {scan.folderSizing?.estimated && (
+            <div className="alert">
+              <span>
+                <strong>Estimated from saved branch totals.</strong>{" "}
+                {scan.folderSizing.cachedBranchCount} small branches reused
+                {scan.folderSizing.cacheDate
+                  ? ` from ${date(scan.folderSizing.cacheDate)}`
+                  : ""}
+                . Changes inside skipped branches may be missing. Run a scan
+                with Quick scan unchecked for fresh totals.
+              </span>
+            </div>
+          )}
+          {!!scan.folderSizing?.prunedDirectoryCount && (
+            <p className="folder-accounting">
+              {scan.folderSizing.prunedDirectoryCount.toLocaleString()} known
+              directories pruned in Quick scan. Lowering this view’s threshold
+              cannot recover skipped descendants; use a fresh scan to measure
+              them.
+            </p>
+          )}
+          {(!scan.folderSizing ||
+            (scan.status !== "completed" && !scan.folderSizing.estimated) ||
+            scan.skipped.length > 0 ||
+            scan.errors.length > 0 ||
+            (scan.folderSizing.scopeComplete === false &&
+              !scan.folderSizing.estimated)) && (
+            <div className="alert">
+              <span>
+                {!scan.folderSizing
+                  ? "Saved full-scan totals may have capped coverage. Run a folder totals scan to measure the search area without a file cap."
+                  : "Coverage is incomplete. Skipped or inaccessible paths can leave totals understated; review scan coverage."}
+              </span>
+            </div>
+          )}
+          {valid && (
+            <div className="folder-tree" aria-label="Folder totals hierarchy">
+              {renderFolder(tree.root, 0)}
+            </div>
+          )}
+          {valid && !tree.matches.size && (
+            <div className="empty">
+              <Folder size={30} />
+              <h3>No counted folders match</h3>
+              <p>Lower the threshold, clear filters, or scan another folder.</p>
+            </div>
+          )}
+          <div className="table-footer">
+            <span>Largest subfolders first · ancestor context retained</span>
+            <span>Read-only folder inventory</span>
+          </div>
+        </>
       )}
-      {(!scan.folderSizing ||
-        (scan.status !== "completed" && !scan.folderSizing.estimated) ||
-        scan.skipped.length > 0 ||
-        scan.errors.length > 0 ||
-        (scan.folderSizing.scopeComplete === false &&
-          !scan.folderSizing.estimated)) && (
-        <div className="alert">
-          <span>
-            {!scan.folderSizing
-              ? "Saved full-scan totals may have capped coverage. Run a folder totals scan to measure the search area without a file cap."
-              : "Coverage is incomplete. Skipped or inaccessible paths can leave totals understated; review scan coverage."}
-          </span>
-        </div>
-      )}
-      {valid && (
-        <div className="folder-tree" aria-label="Folder totals hierarchy">
-          {renderFolder(tree.root, 0)}
-        </div>
-      )}
-      {valid && !tree.matches.size && (
-        <div className="empty">
-          <Folder size={30} />
-          <h3>No counted folders match</h3>
-          <p>Lower the threshold, clear filters, or scan another folder.</p>
-        </div>
-      )}
-      <div className="table-footer">
-        <span>Largest subfolders first · ancestor context retained</span>
-        <span>Read-only folder inventory</span>
-      </div>
     </section>
   );
 }

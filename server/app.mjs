@@ -1,4 +1,12 @@
 import http from "node:http";
+import {
+  containRequest,
+  readRequestBody,
+  requestUrl,
+  sendJson,
+  respondToError,
+  httpTimeoutOptions,
+} from "./http-boundary.mjs";
 import { readFile, writeFile, mkdir, rename, lstat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { randomBytes } from "node:crypto";
@@ -32,6 +40,23 @@ import { probeActivity } from "./opportunity-advice.mjs";
 import { latestChange } from "../shared/opportunities.ts";
 import { inspectFolderFiles } from "./folder-scan.mjs";
 import { normalizeFolderReport } from "./folder-accounting.mjs";
+import { findIgnoredFolders } from "./ignored-folders.mjs";
+import {
+  routineDefinitions,
+  getRoutineDefinition,
+} from "./routine-policies.mjs";
+import {
+  defaultRoutinePreset,
+  loadRoutinePresets,
+  saveRoutinePreset,
+  validateRoutinePreset,
+} from "./routine-presets.mjs";
+import {
+  discoverRoutine,
+  revalidateRoutineCandidate,
+} from "./routine-discovery.mjs";
+import { getRoutineGuide } from "./routine-guides.mjs";
+import { probeNpmGuides } from "./routine-probes.mjs";
 
 const appRoot = fileURLToPath(new URL("../", import.meta.url));
 const csvCell = (value) =>
@@ -41,7 +66,10 @@ const csvCell = (value) =>
     .replaceAll('"', '""') +
   '"';
 const error = (message, status = 400) =>
-  Object.assign(new Error(message), { status });
+  Object.assign(new Error(message), {
+    status,
+    publicCode: status >= 500 ? "INTERNAL_ERROR" : "INVALID_REQUEST",
+  });
 
 function validate(input, settings = false) {
   const out = {};
@@ -122,7 +150,13 @@ export async function createApp({
   dataDir = path.join(appRoot, ".reclaim"),
   dev = false,
   revealFolder = openFolder,
+  routineProbe = probeNpmGuides,
+  // Trusted embedding/test dependency only; HTTP bodies cannot replace cleanup.
+  cleanupFactory = createCleanup,
+  // Trusted embedding/test settings only; HTTP input cannot change deadlines.
+  httpTimeouts,
 } = {}) {
+  const serverOptions = httpTimeoutOptions(httpTimeouts);
   await mkdir(dataDir, { recursive: true });
   let stored;
   try {
@@ -142,6 +176,7 @@ export async function createApp({
       ]),
     ),
     cleanups: stored?.cleanups || [],
+    routines: loadRoutinePresets(stored?.routines),
   };
   const token = randomBytes(32).toString("hex");
   const opportunityIndex = createOpportunityIndex({ dataDir });
@@ -179,7 +214,7 @@ export async function createApp({
     cleanupIdle = Promise.resolve(),
     resolveCleanupIdle = () => {},
     closed = false;
-  const cleanup = createCleanup({
+  const cleanup = cleanupFactory({
     protectedPaths: [appRoot, mainCheckout, dataDir],
     onRecord: async (record) => {
       if (record.status === "deleted" && record.scanId && record.findingId)
@@ -195,6 +230,58 @@ export async function createApp({
     },
   });
   const measurementBusy = () => Boolean(measurementJobs.getSnapshot().job);
+  const routineRuns = new Map();
+  const settingsKey = () => JSON.stringify(state.settings);
+  const routineInput = (operation) => {
+    try {
+      return operation();
+    } catch (cause) {
+      throw error(cause.message);
+    }
+  };
+  const exactKeys = (value, allowed) => {
+    if (
+      !value ||
+      typeof value !== "object" ||
+      Array.isArray(value) ||
+      Object.keys(value).some((key) => !allowed.includes(key))
+    )
+      throw error("Use only the supported routine parameters.");
+  };
+  const routineCatalog = () => ({
+    definitions: routineDefinitions,
+    presets: Object.fromEntries(
+      routineDefinitions.map((definition) => [
+        definition.id,
+        state.routines.presets[definition.id] ||
+          defaultRoutinePreset(definition.id, state.settings.developmentRoots),
+      ]),
+    ),
+    invalidPresets: state.routines.invalidPresets,
+  });
+  const routineBusy = async (operation) => {
+    if (job || cleanupBusy || measurementBusy())
+      throw error(
+        "Wait for the active scan, measurement or cleanup to finish.",
+        409,
+      );
+    cleanupBusy = true;
+    cleanupIdle = new Promise((resolve) => {
+      resolveCleanupIdle = resolve;
+    });
+    try {
+      return await operation();
+    } finally {
+      cleanupBusy = false;
+      resolveCleanupIdle();
+    }
+  };
+  const pruneRoutineRuns = () => {
+    for (const [id, item] of routineRuns)
+      if (item.expiresAt <= Date.now()) routineRuns.delete(id);
+    while (routineRuns.size > 100)
+      routineRuns.delete(routineRuns.keys().next().value);
+  };
   const cleanupChanges = () =>
     state.cleanups.map((record) => ({
       path: record.path,
@@ -240,31 +327,29 @@ export async function createApp({
       appType: "spa",
     });
   }
-  const server = http.createServer(async (req, res) => {
-    const port = server.address()?.port;
-    const allowedHosts = new Set([`127.0.0.1:${port}`, `localhost:${port}`]);
-    if (!allowedHosts.has(req.headers.host)) {
-      res.writeHead(403);
-      res.end("Invalid host");
-      return;
-    }
-    const origin = `http://${req.headers.host}`;
-    if (req.headers.origin && req.headers.origin !== origin) {
-      res.writeHead(403);
-      res.end("Foreign origin refused");
-      return;
-    }
-    res.setHeader("X-Content-Type-Options", "nosniff");
-    res.setHeader("Referrer-Policy", "no-referrer");
-    const url = new URL(req.url, origin);
-    const json = (data, status = 200) => {
-      res.writeHead(status, {
-        "Content-Type": "application/json",
-        "Cache-Control": "no-store",
-      });
-      res.end(JSON.stringify(data));
-    };
+  const server = http.createServer(
+    { ...serverOptions, maxHeaderSize: 16384 },
+    containRequest(handleRequest),
+  );
+  async function handleRequest(req, res) {
     try {
+      const port = server.address()?.port;
+      const allowedHosts = new Set([`127.0.0.1:${port}`, `localhost:${port}`]);
+      if (!allowedHosts.has(req.headers.host)) {
+        res.writeHead(403);
+        res.end("Invalid host");
+        return;
+      }
+      const origin = `http://${req.headers.host}`;
+      if (req.headers.origin && req.headers.origin !== origin) {
+        res.writeHead(403);
+        res.end("Foreign origin refused");
+        return;
+      }
+      res.setHeader("X-Content-Type-Options", "nosniff");
+      res.setHeader("Referrer-Policy", "no-referrer");
+      const url = requestUrl(req.url, origin);
+      const json = (data, status = 200) => sendJson(res, data, status);
       if (closed) throw error("Reclaim is shutting down.", 503);
       if (url.pathname.startsWith("/api/")) {
         res.setHeader("Cache-Control", "no-store");
@@ -285,6 +370,10 @@ export async function createApp({
                 }
               : null,
           });
+          return;
+        }
+        if (req.method === "GET" && url.pathname === "/api/routines") {
+          json(routineCatalog());
           return;
         }
         if (req.method === "GET" && url.pathname === "/api/development") {
@@ -405,11 +494,7 @@ export async function createApp({
           throw error("Session token missing. Reload the app.", 403);
         if (!req.headers["content-type"]?.startsWith("application/json"))
           throw error("Expected JSON.");
-        let raw = "";
-        for await (const chunk of req) {
-          raw += chunk;
-          if (raw.length > 128000) throw error("Request too large.", 413);
-        }
+        const raw = await readRequestBody(req);
         let body;
         try {
           body = JSON.parse(raw);
@@ -418,6 +503,172 @@ export async function createApp({
         }
         if (!body || typeof body !== "object" || Array.isArray(body))
           throw error("Expected an object.");
+        if (url.pathname === "/api/routines/presets") {
+          await routineBusy(async () => {
+            const next = routineInput(() =>
+              saveRoutinePreset(state.routines, body, {
+                roots: state.settings.developmentRoots,
+              }),
+            );
+            state.routines = next;
+            for (const [id, item] of routineRuns)
+              if (item.run.routineId === body.routineId) routineRuns.delete(id);
+            await save();
+          });
+          json(routineCatalog());
+          return;
+        }
+        if (url.pathname === "/api/routines/run") {
+          exactKeys(body, ["routineId", "parameters", "scanId"]);
+          const definition = routineInput(() =>
+            getRoutineDefinition(body.routineId),
+          );
+          if (body.parameters !== undefined)
+            exactKeys(body.parameters, [
+              "minimumBytes",
+              "minimumAgeDays",
+              "roots",
+              "policyVersion",
+            ]);
+          if (body.scanId !== undefined && typeof body.scanId !== "string")
+            throw error("Choose a known scan.");
+          const run = await routineBusy(async () => {
+            const started = Date.now(),
+              initialSettings = settingsKey();
+            const settings = structuredClone(state.settings);
+            const saved = state.routines.presets[definition.id];
+            if (
+              !saved &&
+              state.routines.invalidPresets[definition.id] &&
+              body.parameters === undefined
+            )
+              throw error(
+                "Correct and save this routine's invalid preset before running.",
+              );
+            const parameters = routineInput(() =>
+              validateRoutinePreset({
+                ...(saved ||
+                  defaultRoutinePreset(
+                    definition.id,
+                    settings.developmentRoots,
+                  )),
+                ...(body.parameters || {}),
+                routineId: definition.id,
+              }),
+            );
+            const report =
+              body.scanId === undefined
+                ? undefined
+                : await loadScan(body.scanId);
+            const probe = definition.id.startsWith("npm-")
+              ? await routineProbe()
+              : { scopes: [], notices: [] };
+            const remaining = 30000 - (Date.now() - started);
+            if (remaining <= 0)
+              throw error(
+                "Routine discovery budget elapsed. Narrow the scope and run again.",
+                409,
+              );
+            const run = await discoverRoutine({
+              routineId: definition.id,
+              parameters,
+              report,
+              settings,
+              protectedReason: cleanup.protectionReason,
+              budgetMs: remaining,
+              ...(definition.id.startsWith("npm-") && probe.scopes.length
+                ? {
+                    guideScopes: probe.scopes.filter(
+                      (scope) => scope.routineId === definition.id,
+                    ),
+                  }
+                : {}),
+              guideForCandidate: (routineId, target, scope) =>
+                getRoutineGuide(routineId, {
+                  path: target,
+                  qualification: scope.qualification,
+                }),
+            });
+            if (closed || settingsKey() !== initialSettings)
+              throw error(
+                "Settings changed during discovery. Run the routine again.",
+                409,
+              );
+            run.notices.push(...probe.notices);
+            pruneRoutineRuns();
+            routineRuns.set(run.id, { run, expiresAt: Date.now() + 300000 });
+            pruneRoutineRuns();
+            return run;
+          });
+          json(run);
+          return;
+        }
+        if (url.pathname === "/api/routines/candidates/prepare") {
+          exactKeys(body, ["runId", "candidateId"]);
+          if (
+            typeof body.runId !== "string" ||
+            typeof body.candidateId !== "string"
+          )
+            throw error("Choose a known routine candidate.");
+          const preview = await routineBusy(async () => {
+            pruneRoutineRuns();
+            const known = routineRuns.get(body.runId);
+            if (!known)
+              throw error(
+                "Routine evidence is stale or unknown. Run the routine again.",
+                409,
+              );
+            const initialSettings = settingsKey();
+            let target;
+            try {
+              target = await revalidateRoutineCandidate(
+                known.run,
+                body.candidateId,
+                {
+                  settings: state.settings,
+                  protectedReason: cleanup.protectionReason,
+                },
+              );
+            } catch (cause) {
+              throw error(cause.message, 409);
+            }
+            if (settingsKey() !== initialSettings)
+              throw error("Settings changed. Run the routine again.", 409);
+            const preview = await cleanup.prepare(
+              target.path,
+              target.kind,
+              target.context,
+            );
+            if (settingsKey() !== initialSettings)
+              throw error(
+                "Settings changed during preparation. Run the routine again.",
+                409,
+              );
+            return preview;
+          });
+          json(preview);
+          return;
+        }
+        if (url.pathname === "/api/folders/ignored") {
+          if (
+            !Number.isSafeInteger(body.minimumBytes) ||
+            body.minimumBytes < 0 ||
+            body.minimumBytes > 1024 ** 5
+          )
+            throw error("Choose a valid folder size threshold.");
+          const report = await loadScan(body.scanId);
+          json(
+            await findIgnoredFolders(report, body.minimumBytes, {
+              exclusions: [
+                ...report.options.exclusions,
+                ...state.settings.exclusions,
+              ],
+              skipCloud: state.settings.skipCloud || report.options.skipCloud,
+              protectedReason: cleanup.protectionReason,
+            }),
+          );
+          return;
+        }
         if (url.pathname === "/api/folders/inspect") {
           if (typeof body.path !== "string" || !path.isAbsolute(body.path))
             throw error("Choose a known folder.");
@@ -653,6 +904,7 @@ export async function createApp({
           if (cleanupBusy)
             throw error("Wait for the cleanup inspection to finish.", 409);
           state.settings = { ...state.settings, ...validate(body, true) };
+          routineRuns.clear();
           if (
             body.developmentRoots !== undefined ||
             body.exclusions !== undefined ||
@@ -803,9 +1055,39 @@ export async function createApp({
         throw error("Endpoint not found.", 404);
       }
       if (vite) {
-        vite.middlewares(req, res, () => {
-          res.writeHead(404);
-          res.end();
+        await new Promise((resolve, reject) => {
+          const cleanup = () => {
+            res.off("finish", done);
+            res.off("close", done);
+          };
+          const done = () => {
+            cleanup();
+            resolve();
+          };
+          res.once("finish", done);
+          res.once("close", done);
+          try {
+            vite.middlewares(req, res, (cause) => {
+              if (cause) {
+                cleanup();
+                reject(cause);
+                return;
+              }
+              try {
+                if (!res.headersSent && !res.writableEnded && !res.destroyed) {
+                  res.writeHead(404);
+                  res.end();
+                }
+              } catch (failure) {
+                cleanup();
+                reject(failure);
+              }
+            });
+          } catch (cause) {
+            res.off("finish", done);
+            res.off("close", done);
+            reject(cause);
+          }
         });
         return;
       }
@@ -836,10 +1118,10 @@ export async function createApp({
           mime[path.extname(target)] || "application/octet-stream",
       });
       res.end(contents);
-    } catch (e) {
-      json({ error: e.message }, e.status || 500);
+    } catch (cause) {
+      respondToError(req, res, cause);
     }
-  });
+  }
   async function closeApp() {
     if (closed) return;
     closed = true;

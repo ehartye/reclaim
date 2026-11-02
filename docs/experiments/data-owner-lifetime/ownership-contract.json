@@ -1,0 +1,100 @@
+{
+  "schema": "reclaim.data-owner-contract-proposal/1",
+  "proposalOnly": true,
+  "verdict": "Partial",
+  "productionAdapterProvided": false,
+  "enabledScopes": [],
+  "invariant": "No B write/mutation authority while any A actor can publish persistent state or continue admitted mutation",
+  "candidateStrategy": "Exclusive lease-file handle duplicated into each admitted actor",
+  "actorReferenceMap": [
+    {
+      "role": "controller",
+      "stateAuthority": false,
+      "reference": "Initial exclusive lease until all three duplicates are verified; then closes",
+      "supervision": "Retains original creation handles and owned Job until original exits plus Job zero"
+    },
+    {
+      "role": "helper",
+      "stateAuthority": false,
+      "reference": "Duplicate of same exclusive lease kernel file object; injected real death closes only its reference"
+    },
+    {
+      "role": "writer",
+      "stateAuthority": true,
+      "reference": "Duplicate lease through actual atomic File.Replace publication; closes when admitted operation ends",
+      "resource": "Text data path/state.json"
+    },
+    {
+      "role": "mutator",
+      "stateAuthority": true,
+      "reference": "Duplicate lease through actual selected disposable payload deletion; closes when admitted operation ends",
+      "resource": "Text data path/disposable-payload"
+    },
+    {
+      "role": "contender",
+      "stateAuthority": "Lease acquisition only; recovery remains Unknown; no state reset/recovery claim",
+      "reference": "Independent exclusive open on current text path, held until observer finishes"
+    },
+    {
+      "role": "observer",
+      "stateAuthority": false,
+      "reference": "Original A process identities, independent lease attempts and actual byte/mutation observations"
+    },
+    {
+      "role": "replacer",
+      "stateAuthority": "Fixture-only adversary",
+      "reference": "Contained before mutation; renames selected ancestor and seeds replacement physical directory"
+    }
+  ],
+  "experimentalSemantics": {
+    "acquire": "CreateFileW GENERIC_READ|GENERIC_WRITE, share=0, OPEN_ALWAYS at text data path; acquisition is physical lease availability, not state consistency",
+    "admit": "Owned Job exists first; create actor suspended, retain creation handle, assign and verify exact Job, DuplicateHandle exclusive lease into target process, record identity, then resume",
+    "stop": "No new actors/admissions after helper death; earliest native stop QPC and durable request recovery use reviewed shared WP1 mechanism; cancel immediately, retain all supervision",
+    "cancelAndDrain": "Shared 60-second operation and 5-second earliest-stop watchdog; native action obligations independent of logging and retried until exact original exits plus exact Job zero",
+    "release": "Last duplicate close releases physical file sharing exclusion; no PID-age stealing or EOF-based drain claim",
+    "fence": "Exclusive reference prevents another opener on the same physical file. No ancestor directory references or namespace fencing are provided by this candidate",
+    "recovery": "Unknown after real death or inconsistent evidence; no automatic reset, retry or recovery mutation; all fixture bytes/receipts archived"
+  },
+  "futureServerBoundary": {
+    "acquireBeforeStateLoad": "Required for a future build; not implemented in createApp or index",
+    "ownershipObject": "Opaque physical-directory proof and tracked-operation registry",
+    "registry": [
+      "admit(kind, resourceId, cancel, drained)",
+      "stopAdmissions",
+      "cancel",
+      "awaitDrain"
+    ],
+    "authority": "Every persistent writer and destructive actor needs retained qualified authority through actual publication/drain",
+    "forbiddenHttpInputs": [
+      "raw native handles",
+      "raw native flags",
+      "arbitrary lease/execution paths"
+    ],
+    "changesExistingRoutes": false
+  },
+  "operationResults": [
+    "complete",
+    "refused",
+    "partial",
+    "interrupted"
+  ],
+  "acquireResults": {
+    "acquired": "Physical lease available only; does not grant production Ready or establish state consistency",
+    "busy": "Another retained reference prevents acquisition",
+    "refused": "Unsupported identity/lifetime/recovery proof; no fallback writer",
+    "recoveryRequired": "Preserve existing bytes and evidence; no automatic reset or recovery mutation"
+  },
+  "limits": {
+    "operationMilliseconds": 60000,
+    "firstStopDrainMilliseconds": 5000,
+    "qualifiedAtTheseLimits": false
+  },
+  "unknownExit": "Retain supervision, authority references and fixtures; never claim drain or permit a successor while uncertain",
+  "qualificationVerdicts": [
+    "Validated",
+    "Partial",
+    "Invalidated"
+  ],
+  "automaticRetryOrResume": false,
+  "productionGate": "F03 build remains blocked until a Validated exact native lifetime/identity contract and separately verified consistency/recovery integration"
+}

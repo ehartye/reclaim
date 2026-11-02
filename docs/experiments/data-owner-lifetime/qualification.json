@@ -1,0 +1,225 @@
+{
+  "schema": "reclaim.data-owner-lifetime-qualification/1",
+  "verdict": "Partial",
+  "productionEnabled": false,
+  "qualifiedScopes": [],
+  "experimentSourceCommit": "d72b5cdece6f8b7a2b06e673dbffb53da924d414",
+  "sourceIdentityScope": "Historical exact experiment inputs at the stated commit, including unchanged-application baseline/regression inputs; later HTTP-only source changes do not retroactively change these snapshots",
+  "interpretation": "Passing fixture assertions establish two narrow observations and a bounded Partial verdict, not production one-writer ownership or recovery",
+  "hostScope": {
+    "platform": "Windows",
+    "filesystem": "local NTFS",
+    "privilege": "unprivileged",
+    "supportedProductionLane": null,
+    "exactIdentity": "OS build/runtime/volume/physical directory and file identities are retained in the private hash-bound packet; no other platform is qualified"
+  },
+  "strategy": "Exclusive lease references held by every admitted actor; direct text-path writes",
+  "helper": {
+    "bytes": 45568,
+    "sha256": "f5ff6ee03683bee87c85d8535643679937e215f92ac376ff3a8ac8ed3b3a7e26"
+  },
+  "sources": [
+    {
+      "path": "tests/data-owner-reference-qualification.test.mjs",
+      "bytes": 15461,
+      "sha256": "a2cfe57b4fd34a37bf539a8ed6caa9a45e5a237216722718fe06e77fbb669a4f"
+    },
+    {
+      "path": "tests/fixtures/data-owner-lifetime/reference-candidate.cs",
+      "bytes": 18088,
+      "sha256": "11304cf76cfdfdc84f8a6c10d04094f7e95910436efed3f72c0cbd7ca862599a"
+    },
+    {
+      "path": "tests/fixtures/data-owner-lifetime/build-candidate.ps1",
+      "bytes": 982,
+      "sha256": "c8e83f0928e9a0b930133cd17816b3ef64da62f536dfbed15832879247f0c687"
+    },
+    {
+      "path": "tests/fixtures/data-owner-lifetime/candidate-contract.json",
+      "bytes": 3532,
+      "sha256": "3f4c54b6f4f6c43deb6da96fcb136e7d52fec382f18e3ea780f864c1e7f6cf3d"
+    },
+    {
+      "path": "tests/fixtures/data-owner-lifetime/native-harness.cs",
+      "bytes": 26824,
+      "sha256": "378c3556301960229931e2335866ae9b6f29ad5a76d784486c8f1207e40d14df"
+    },
+    {
+      "path": "tests/fixtures/data-owner-lifetime/build-native.ps1",
+      "bytes": 897,
+      "sha256": "b28289d8db86980bc38ba0aba658009775135c80a695d329a13fcad06291386c"
+    },
+    {
+      "path": "tests/data-owner-lifetime-qualification.test.mjs",
+      "bytes": 15840,
+      "sha256": "75663a3353ca4da3ac99c3dbee9306e802d3b5d096e234ff5cae7ea94a18a0a9"
+    },
+    {
+      "path": "tests/fixtures/data-owner-lifetime/sequential-worker.mjs",
+      "bytes": 1719,
+      "sha256": "cd954b3b818730ca079a2560be358e14c4f855eb4ec4dba428cf9f3260995777"
+    },
+    {
+      "path": "server/app.mjs",
+      "bytes": 38982,
+      "sha256": "20054dce03a4810f67c31ec3689a5858a7e07498a2117038ee2105aa2d46e611"
+    }
+  ],
+  "evidence": {
+    "runId": "candidate-58cadb67-27c1-4b8c-9a58-6f027aa82e68",
+    "qualificationSha256": "81389f5fbb1c69a1dd79eca088401ca40d1e06494d4adef808433f3e0f9a84f2",
+    "inventorySha256": "7c2d1cd5bdfde0314f95f511c6b2744871b2f7d9b6d6bf8f5b2d43eb4b8c3c09"
+  },
+  "observedCases": [
+    {
+      "case": "reference-helper-loss",
+      "verdict": "Partial",
+      "noAuthorityOverlapObserved": true,
+      "actualPublicationObserved": true,
+      "actualMutationObserved": true,
+      "originalActorsExited": true,
+      "jobActive": 0,
+      "deadlineMissed": false,
+      "evidence": "candidate-58cadb67-27c1-4b8c-9a58-6f027aa82e68/reference-helper-loss/receipt.json"
+    },
+    {
+      "case": "ancestor-replacement",
+      "verdict": "Partial",
+      "noAuthorityOverlapObserved": true,
+      "actualPublicationObserved": true,
+      "actualMutationObserved": true,
+      "originalActorsExited": true,
+      "jobActive": 0,
+      "deadlineMissed": false,
+      "evidence": "candidate-58cadb67-27c1-4b8c-9a58-6f027aa82e68/ancestor-replacement/receipt.json"
+    }
+  ],
+  "requiredCaseMatrix": [
+    {
+      "case": "helper-loss-held-state-writer-and-mutator",
+      "verdict": "Partial",
+      "execution": "observed",
+      "evidence": "reference-helper-loss/receipt.json",
+      "reason": "Exact observed schedule only; no general qualification inferred"
+    },
+    {
+      "case": "node-parent-death-with-survivors",
+      "verdict": "Partial",
+      "execution": "unqualified-not-run",
+      "evidence": null,
+      "reason": "Bounded Partial exit: namespace identity/fencing remains unsettled; this case remains unqualified"
+    },
+    {
+      "case": "each-worker-failure",
+      "verdict": "Partial",
+      "execution": "unqualified-not-run",
+      "evidence": null,
+      "reason": "Bounded Partial exit: namespace identity/fencing remains unsettled; this case remains unqualified"
+    },
+    {
+      "case": "canonical-alias-same-physical-directory",
+      "verdict": "Partial",
+      "execution": "unqualified-not-run",
+      "evidence": null,
+      "reason": "Bounded Partial exit: namespace identity/fencing remains unsettled; this case remains unqualified"
+    },
+    {
+      "case": "different-ports-and-entry-points",
+      "verdict": "Partial",
+      "execution": "unqualified-not-run",
+      "evidence": null,
+      "reason": "Bounded Partial exit: namespace identity/fencing remains unsettled; this case remains unqualified"
+    },
+    {
+      "case": "independent-physical-directories",
+      "verdict": "Partial",
+      "execution": "unqualified-not-run",
+      "evidence": null,
+      "reason": "Bounded Partial exit: namespace identity/fencing remains unsettled; this case remains unqualified"
+    },
+    {
+      "case": "root-and-ancestor-replacement",
+      "verdict": "Partial",
+      "execution": "observed",
+      "evidence": "ancestor-replacement/receipt.json",
+      "reason": "Exact observed schedule only; no general qualification inferred"
+    },
+    {
+      "case": "abandoned-acquisition-versus-consistency",
+      "verdict": "Partial",
+      "execution": "unqualified-not-run",
+      "evidence": null,
+      "reason": "Bounded Partial exit: namespace identity/fencing remains unsettled; this case remains unqualified"
+    },
+    {
+      "case": "corrupt-recovery",
+      "verdict": "Partial",
+      "execution": "unqualified-not-run",
+      "evidence": null,
+      "reason": "Bounded Partial exit: namespace identity/fencing remains unsettled; this case remains unqualified"
+    },
+    {
+      "case": "ambiguous-or-unsupported-recovery",
+      "verdict": "Partial",
+      "execution": "unqualified-not-run",
+      "evidence": null,
+      "reason": "Bounded Partial exit: namespace identity/fencing remains unsettled; this case remains unqualified"
+    },
+    {
+      "case": "initialization-failure",
+      "verdict": "Partial",
+      "execution": "unqualified-not-run",
+      "evidence": null,
+      "reason": "Bounded Partial exit: namespace identity/fencing remains unsettled; this case remains unqualified"
+    },
+    {
+      "case": "listen-failure",
+      "verdict": "Partial",
+      "execution": "unqualified-not-run",
+      "evidence": null,
+      "reason": "Bounded Partial exit: namespace identity/fencing remains unsettled; this case remains unqualified"
+    },
+    {
+      "case": "cancel",
+      "verdict": "Partial",
+      "execution": "unqualified-not-run",
+      "evidence": null,
+      "reason": "Bounded Partial exit: namespace identity/fencing remains unsettled; this case remains unqualified"
+    },
+    {
+      "case": "blocked-drain",
+      "verdict": "Partial",
+      "execution": "unqualified-not-run",
+      "evidence": null,
+      "reason": "Bounded Partial exit: namespace identity/fencing remains unsettled; this case remains unqualified"
+    },
+    {
+      "case": "native-adapter-failure",
+      "verdict": "Partial",
+      "execution": "unqualified-not-run",
+      "evidence": null,
+      "reason": "Bounded Partial exit: namespace identity/fencing remains unsettled; this case remains unqualified"
+    },
+    {
+      "case": "seeded-contention",
+      "verdict": "Partial",
+      "execution": "unqualified-not-run",
+      "evidence": null,
+      "reason": "Bounded Partial exit: namespace identity/fencing remains unsettled; this case remains unqualified"
+    }
+  ],
+  "authorityAndConsistency": "Physical lease availability is separate from recovery readiness. No production state-store changes or automatic recovery were implemented.",
+  "safetyObservations": {
+    "outsideSentinelUnchanged": true,
+    "allOriginalActorsExited": true,
+    "allJobsZero": true
+  },
+  "rejectedBaseline": "Helper-only mutex lease plus ordinary asynchronous drain is Invalidated by actual old-actor publication/mutation after B acquired",
+  "experimentalCeilings": {
+    "operationMilliseconds": 60000,
+    "firstStopDrainMilliseconds": 5000
+  },
+  "supportedLimits": null,
+  "smallestNextExperiment": "Before any further lifetime/alias/recovery qualification, bind or fence every publication/mutation to retained physical directory/ancestor identities, or use a broker that cannot follow replaced text paths. Prove the ancestor replacement schedule with actual bytes; no production enabling.",
+  "nextGate": "Settle physical publication/ancestor binding or exclusive broker before remaining lifetime, alias, entry-point and recovery qualification; F03 planning remains blocked"
+}

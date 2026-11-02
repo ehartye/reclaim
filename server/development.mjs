@@ -120,6 +120,29 @@ export async function describeGenerated(target) {
       "Run the project’s build script (npm run build, or the configured package manager).";
     reason =
       "Adjacent package.json defines a build script. Confirm the output has no hand-edited files.";
+  } else if (name === "intermediate") {
+    const projects = (await readdir(parent)).filter((n) =>
+      /\.uproject$/i.test(n),
+    );
+    if (
+      projects.length !== 1 ||
+      !(await exists(path.join(parent, "Source")))?.isDirectory()
+    )
+      return null;
+    let project;
+    try {
+      project = JSON.parse(
+        await readFile(path.join(parent, projects[0]), "utf8"),
+      );
+    } catch {
+      return null;
+    }
+    if (!Array.isArray(project.Modules) || !project.Modules.length) return null;
+    label = "Unreal project intermediates";
+    restore =
+      "Regenerate project files and rebuild this project's C++ targets with its configured Unreal Engine and toolchain.";
+    reason =
+      "An adjacent Unreal project with native modules and source identifies temporary build output. Preserve Build, Source, Content, Config, Plugins and Saved.";
   } else if (
     name === "target" &&
     (await exists(path.join(parent, "Cargo.toml")))
@@ -300,6 +323,7 @@ export const discoveryOperations = [
   "caches",
 ];
 const buildNames = new Set([
+  "intermediate",
   "build",
   "dist",
   ".next",

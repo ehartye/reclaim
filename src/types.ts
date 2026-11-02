@@ -37,6 +37,28 @@ export type FolderInspection = {
   nextOffset: number | null;
   notices: string[];
 };
+export type IgnoredFolderResult = {
+  scanId: string;
+  recordedAt: string;
+  checkedAt: string;
+  minimumBytes: number;
+  targets: (Directory & {
+    repository: string;
+    ignore: { source: string; line: number; pattern: string };
+    cleanupSupported: boolean;
+    reason: string;
+  })[];
+  coverage: {
+    complete: boolean;
+    candidateCount: number;
+    checkedDirectories: number;
+    repositories: number;
+    directoryLimit: number;
+  };
+  errors: { path: string; reason: string }[];
+  skipped: { path: string; reason: string }[];
+  notices: string[];
+};
 export type Scan = {
   folderSizing?: {
     minimumBytes: number;
@@ -108,8 +130,41 @@ export type Settings = {
   skipCloud: boolean;
 };
 export type { Review } from "../shared/review.ts";
+export type {
+  RoutineDefinition,
+  RoutinePreset,
+  RoutinePresetState,
+} from "../shared/routines.ts";
+export type RoutineGuide = {
+  title: string;
+  mode: import("../shared/routines.ts").RoutineMode;
+  qualified: boolean;
+  steps: string[];
+  commands: {
+    label: string;
+    command: string;
+    scope: string;
+    mutates: boolean;
+    effects: string;
+    optional: boolean;
+  }[];
+  notices: string[];
+  evidence: string[];
+};
+export type RoutineCandidate =
+  import("../shared/routines.ts").RoutineCandidate & { guide?: RoutineGuide };
+export type RoutineRun = Omit<
+  import("../shared/routines.ts").RoutineRun,
+  "candidates"
+> & { candidates: RoutineCandidate[] };
+export type RoutineCatalog = {
+  definitions: import("../shared/routines.ts").RoutineDefinition[];
+  presets: Record<string, import("../shared/routines.ts").RoutinePreset>;
+  invalidPresets: import("../shared/routines.ts").RoutinePresetState["invalidPresets"];
+};
 import type { Review } from "../shared/review.ts";
 export type State = {
+  routines?: import("../shared/routines.ts").RoutinePresetState;
   measurementJob?: MeasurementJob | null;
   cleanupBusy: boolean;
   cleanups: CleanupRecord[];

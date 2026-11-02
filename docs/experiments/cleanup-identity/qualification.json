@@ -1,0 +1,531 @@
+{
+  "schema": "reclaim.cleanup-identity-qualification/1",
+  "overallVerdict": "Invalidated",
+  "productionEnabled": false,
+  "experimentSourceCommit": "8ad116c7a09213f34193c4cf455fddf253d283b4",
+  "sourceIdentityScope": "Historical exact inputs to the recorded rejection packets. Subsequent integration-only fixture drain corrections do not rewrite those snapshots or qualify a production lane.",
+  "qualifiedLanes": [],
+  "interpretation": "Harness assertions passed; no operator lane is Validated. Generated and Git verdicts are independent. This does not alter existing production code.",
+  "hostScope": {
+    "platform": "Windows",
+    "fileSystem": "local NTFS",
+    "privilege": "unprivileged",
+    "evidence": "Exact host/runtime/volume identities remain in the private byte-verified receipts; other hosts/filesystems are unsupported"
+  },
+  "lanes": [
+    {
+      "operator": "generated-file-handle-disposition-prototype",
+      "platform": "Windows",
+      "fileSystem": "NTFS",
+      "verdict": "Invalidated",
+      "productionEnabled": false,
+      "helper": {
+        "bytes": 27648,
+        "sha256": "3889806f3f4bbe840e6bd76774de7b5b2a4394453a03f365f49bf9ea78820fd2"
+      },
+      "sources": [
+        {
+          "path": "tests/fixtures/cleanup-identity/native-prototype.cs",
+          "bytes": 26496,
+          "sha256": "f373a0123f98865e65713444be2c075cb3ce497853c1ee0e5062884acf63c047"
+        },
+        {
+          "path": "tests/fixtures/cleanup-identity/build-native.ps1",
+          "bytes": 981,
+          "sha256": "2e2fbe16ba46ab32fbf7e9c52e9ce84d16d7e4eddfce89ca27a702869721aa9c"
+        },
+        {
+          "path": "tests/cleanup-identity-qualification.test.mjs",
+          "bytes": 16342,
+          "sha256": "c668d309fccbbe556ff3a41e07973b9d3ab39d7428a1d65683ab197b13e0cd9a"
+        },
+        {
+          "path": "tests/fixtures/cleanup-identity/manifest.json",
+          "bytes": 2682,
+          "sha256": "50c8df2fe84400abb21415ecc9a7b2f32444ddf4d9b0aff5bcca9034e8ce01a6"
+        }
+      ],
+      "evidence": {
+        "runId": "native-7968cf71-bdc1-414f-b927-cacf5f654224",
+        "qualificationSha256": "c49592b237a06f48cdd51d8eb0bf38ebf251a69bfb63af9992890ac2a17e38de",
+        "inventorySha256": "7ecea1f990302be3cd0f2b7d46c1de2bbf169d349d2ef0032aac743b8013705f"
+      },
+      "supportedLimits": null,
+      "experimentalCeilings": {
+        "entries": 250000,
+        "retainedHandles": 512,
+        "operationMilliseconds": 60000,
+        "drainWatchdogMilliseconds": 5000
+      },
+      "identitySharingAncestorStrategy": "Retained ancestor/directory/file handles; file/volume IDs; no delete sharing on ancestors; selected leaf read-sharing only; handle disposition",
+      "reproducedBoundaryCases": [
+        {
+          "case": "ordinary",
+          "status": "complete",
+          "strategyVerdict": "Partial",
+          "outsideUnchanged": true,
+          "strictDrainObserved": true,
+          "processExitCode": 0
+        },
+        {
+          "case": "target-rename",
+          "status": "complete",
+          "strategyVerdict": "Partial",
+          "outsideUnchanged": true,
+          "strictDrainObserved": true,
+          "processExitCode": 0
+        },
+        {
+          "case": "ancestor-rename",
+          "status": "complete",
+          "strategyVerdict": "Partial",
+          "outsideUnchanged": true,
+          "strictDrainObserved": true,
+          "processExitCode": 0
+        },
+        {
+          "case": "changed-descendant",
+          "status": "complete",
+          "strategyVerdict": "Partial",
+          "outsideUnchanged": true,
+          "strictDrainObserved": true,
+          "processExitCode": 0
+        },
+        {
+          "case": "late-created-descendant",
+          "status": "partial",
+          "strategyVerdict": "Partial",
+          "outsideUnchanged": true,
+          "strictDrainObserved": true,
+          "processExitCode": 0
+        },
+        {
+          "case": "hardlink",
+          "status": "refused",
+          "strategyVerdict": "Partial",
+          "outsideUnchanged": true,
+          "strictDrainObserved": true,
+          "processExitCode": 0
+        },
+        {
+          "case": "alternate-stream",
+          "status": "refused",
+          "strategyVerdict": "Partial",
+          "outsideUnchanged": true,
+          "strictDrainObserved": true,
+          "processExitCode": 0
+        },
+        {
+          "case": "conflicting-handle",
+          "status": "refused",
+          "strategyVerdict": "Partial",
+          "outsideUnchanged": true,
+          "strictDrainObserved": true,
+          "processExitCode": 0
+        },
+        {
+          "case": "cancel",
+          "status": "interrupted",
+          "strategyVerdict": "Partial",
+          "outsideUnchanged": true,
+          "strictDrainObserved": true,
+          "processExitCode": 0
+        },
+        {
+          "case": "helper-failure",
+          "status": "interrupted",
+          "strategyVerdict": "Partial",
+          "outsideUnchanged": true,
+          "strictDrainObserved": true,
+          "processExitCode": 0
+        },
+        {
+          "case": "unicode",
+          "status": "complete",
+          "strategyVerdict": "Partial",
+          "outsideUnchanged": true,
+          "strictDrainObserved": true,
+          "processExitCode": 0
+        },
+        {
+          "case": "job-collision",
+          "status": "refused",
+          "strategyVerdict": "Partial",
+          "outsideUnchanged": true,
+          "strictDrainObserved": true,
+          "processExitCode": 0
+        },
+        {
+          "case": "blocked-cancel",
+          "status": "interrupted",
+          "strategyVerdict": "Invalidated",
+          "outsideUnchanged": true,
+          "strictDrainObserved": true,
+          "processExitCode": 2
+        }
+      ],
+      "outsideScopeComparison": "All measured sentinel identities and bytes unchanged; this does not repair missed required drain deadline",
+      "receiptBehavior": "Complete/refused/partial primitive observations; blocked cancellation Invalidated candidate separately from interrupted operation and unknown deletion count; strict owned Job drain observed afterward",
+      "matrix": [
+        {
+          "case": "target-rename-and-reparse-replacement",
+          "verdict": "Partial",
+          "evidence": "Retained target rename measured; see receipt; other boundaries unresolved",
+          "nextExperiment": "Do not promote invalidated candidate; settle bounded admitted-operation drain/fencing before more qualification"
+        },
+        {
+          "case": "ancestor-rename-and-reparse-replacement",
+          "verdict": "Partial",
+          "evidence": "Retained project rename measured; see receipt; other boundaries unresolved",
+          "nextExperiment": "Do not promote invalidated candidate; settle bounded admitted-operation drain/fencing before more qualification"
+        },
+        {
+          "case": "hardlink",
+          "verdict": "Partial",
+          "evidence": "One two-link leaf measured; see receipt",
+          "nextExperiment": "Do not promote invalidated candidate; settle bounded admitted-operation drain/fencing before more qualification"
+        },
+        {
+          "case": "alternate-data-stream",
+          "verdict": "Partial",
+          "evidence": "One named stream measured; see receipt",
+          "nextExperiment": "Do not promote invalidated candidate; settle bounded admitted-operation drain/fencing before more qualification"
+        },
+        {
+          "case": "case-sensitive-directory",
+          "verdict": "Partial",
+          "evidence": "Unresolved; not exercised in this run",
+          "nextExperiment": "Do not promote invalidated candidate; settle bounded admitted-operation drain/fencing before more qualification"
+        },
+        {
+          "case": "unicode-and-long-path",
+          "verdict": "Partial",
+          "evidence": "Unicode names/content measured; long paths unresolved",
+          "nextExperiment": "Do not promote invalidated candidate; settle bounded admitted-operation drain/fencing before more qualification"
+        },
+        {
+          "case": "file-id-replacement-or-reuse",
+          "verdict": "Partial",
+          "evidence": "Unresolved; not exercised in this run",
+          "nextExperiment": "Do not promote invalidated candidate; settle bounded admitted-operation drain/fencing before more qualification"
+        },
+        {
+          "case": "late-created-descendant",
+          "verdict": "Partial",
+          "evidence": "Late child and selected-leaf outcomes measured; see receipt",
+          "nextExperiment": "Do not promote invalidated candidate; settle bounded admitted-operation drain/fencing before more qualification"
+        },
+        {
+          "case": "changed-descendant",
+          "verdict": "Partial",
+          "evidence": "External write-open measured; see receipt",
+          "nextExperiment": "Do not promote invalidated candidate; settle bounded admitted-operation drain/fencing before more qualification"
+        },
+        {
+          "case": "tracked-source-content",
+          "verdict": "Partial",
+          "evidence": "Unresolved; not exercised in this run",
+          "nextExperiment": "Do not promote invalidated candidate; settle bounded admitted-operation drain/fencing before more qualification"
+        },
+        {
+          "case": "protected-content",
+          "verdict": "Partial",
+          "evidence": "Unresolved; not exercised in this run",
+          "nextExperiment": "Do not promote invalidated candidate; settle bounded admitted-operation drain/fencing before more qualification"
+        },
+        {
+          "case": "named-exclusion",
+          "verdict": "Partial",
+          "evidence": "Unresolved; not exercised in this run",
+          "nextExperiment": "Do not promote invalidated candidate; settle bounded admitted-operation drain/fencing before more qualification"
+        },
+        {
+          "case": "policy-generation-change",
+          "verdict": "Partial",
+          "evidence": "Unresolved; not exercised in this run",
+          "nextExperiment": "Do not promote invalidated candidate; settle bounded admitted-operation drain/fencing before more qualification"
+        },
+        {
+          "case": "external-conflicting-handle",
+          "verdict": "Partial",
+          "evidence": "Existing writer measured; see receipt",
+          "nextExperiment": "Do not promote invalidated candidate; settle bounded admitted-operation drain/fencing before more qualification"
+        },
+        {
+          "case": "cancel",
+          "verdict": "Invalidated",
+          "evidence": "Cooperative case measured; blocked case included only if present in cases",
+          "nextExperiment": "Do not promote invalidated candidate; settle bounded admitted-operation drain/fencing before more qualification"
+        },
+        {
+          "case": "helper-failure",
+          "verdict": "Partial",
+          "evidence": "Worker exit before disposition measured; see receipt",
+          "nextExperiment": "Do not promote invalidated candidate; settle bounded admitted-operation drain/fencing before more qualification"
+        },
+        {
+          "case": "process-death",
+          "verdict": "Partial",
+          "evidence": "Unresolved; not exercised in this run",
+          "nextExperiment": "Do not promote invalidated candidate; settle bounded admitted-operation drain/fencing before more qualification"
+        },
+        {
+          "case": "unsupported-volume",
+          "verdict": "Partial",
+          "evidence": "Unresolved; not exercised in this run",
+          "nextExperiment": "Do not promote invalidated candidate; settle bounded admitted-operation drain/fencing before more qualification"
+        },
+        {
+          "case": "unsupported-reparse-state",
+          "verdict": "Partial",
+          "evidence": "Unresolved; not exercised in this run",
+          "nextExperiment": "Do not promote invalidated candidate; settle bounded admitted-operation drain/fencing before more qualification"
+        },
+        {
+          "case": "entry-limit",
+          "verdict": "Partial",
+          "evidence": "Unresolved; not exercised in this run",
+          "nextExperiment": "Do not promote invalidated candidate; settle bounded admitted-operation drain/fencing before more qualification"
+        },
+        {
+          "case": "handle-limit",
+          "verdict": "Partial",
+          "evidence": "Unresolved; not exercised in this run",
+          "nextExperiment": "Do not promote invalidated candidate; settle bounded admitted-operation drain/fencing before more qualification"
+        },
+        {
+          "case": "operation-budget",
+          "verdict": "Partial",
+          "evidence": "Unresolved; not exercised in this run",
+          "nextExperiment": "Do not promote invalidated candidate; settle bounded admitted-operation drain/fencing before more qualification"
+        },
+        {
+          "case": "drain-watchdog",
+          "verdict": "Invalidated",
+          "evidence": "Blocked cancellation measured; strategy and operation dimensions recorded separately in receipt",
+          "nextExperiment": "Do not promote invalidated candidate; settle bounded admitted-operation drain/fencing before more qualification"
+        },
+        {
+          "case": "seeded-stress",
+          "verdict": "Partial",
+          "evidence": "Unresolved; not exercised in this run",
+          "nextExperiment": "Do not promote invalidated candidate; settle bounded admitted-operation drain/fencing before more qualification"
+        }
+      ],
+      "nextExperiment": "Replace non-cooperative admitted-operation contract with enforceable bounded drain/fence contract. Prove first-cancel deadline with held pre-disposition actor before continuing recursion qualification. No production enabling."
+    },
+    {
+      "operator": "unforced-git-worktree-remove-with-worker-owned-retained-handles",
+      "platform": "Windows",
+      "fileSystem": "NTFS",
+      "verdict": "Invalidated",
+      "productionEnabled": false,
+      "helper": {
+        "bytes": 37376,
+        "sha256": "03482c48f99b1a42f6af2af77577988732e3507688c365b6400fd36cd0ad4c51"
+      },
+      "sources": [
+        {
+          "path": "tests/fixtures/cleanup-identity/git-native-supervision.cs",
+          "bytes": 17767,
+          "sha256": "41e4dab84b6f291213ef8b0330eec08643d90f7f3a536b47454b77258c892d71"
+        },
+        {
+          "path": "tests/fixtures/cleanup-identity/git-operator.cs",
+          "bytes": 18770,
+          "sha256": "18bdd2befe8f013aa26a68c3e63118d267bc98d8d78c17061ebb85e01644fde6"
+        },
+        {
+          "path": "tests/fixtures/cleanup-identity/build-git-native.ps1",
+          "bytes": 977,
+          "sha256": "faeeb80d32febf8cb8ab42ed3d8c148ebebb8cee83891318c0fea5e5711db5c1"
+        },
+        {
+          "path": "tests/cleanup-git-qualification.test.mjs",
+          "bytes": 17327,
+          "sha256": "f161bc40cf8a6c67d094ef5b1192a778dfae3c5bf99150ea2a696c708dbb2739"
+        },
+        {
+          "path": "tests/fixtures/cleanup-identity/manifest.json",
+          "bytes": 2682,
+          "sha256": "50c8df2fe84400abb21415ecc9a7b2f32444ddf4d9b0aff5bcca9034e8ce01a6"
+        }
+      ],
+      "evidence": {
+        "runId": "git-descendant-survival-55e2305d-0ed2-4419-8161-b53a361b17a0",
+        "qualificationSha256": "719523d77f9473461ce277baeb52ea0a83ef62e4c0143cef23a9d77322e5a30e",
+        "inventorySha256": "04876ed5faa82bdffd9f8ba13125097f9f2af62aed1fb66b2ee50c620e40efe2",
+        "supplementary": [
+          {
+            "runId": "git-observer-cancel-9022ef3c-0cd7-4314-a547-947ebc8d91e5",
+            "qualificationSha256": "36703242ddcd564c4d7dead02910d2587e467135315f06dab1178fda2e650336",
+            "inventorySha256": "bf75810df8370c3d36b7ddea586330d852a10764a8d8c3662e4eedacc6a1055d"
+          },
+          {
+            "runId": "git-ordinary-4585ae49-9ce5-490e-822a-d00ed82ac262",
+            "qualificationSha256": "62d10bde7b80fa2cc5f987d2c3e3fd85527c80a3227a788745e76e36835a3f90",
+            "inventorySha256": "ff608d5ed591f2f0c40e7c4edf49b4cb987c73783d6e9fd7d5838f6c2752ce4b"
+          }
+        ]
+      },
+      "supportedLimits": null,
+      "experimentalCeilings": {
+        "entries": 250000,
+        "retainedHandles": 512,
+        "operationMilliseconds": 60000,
+        "drainWatchdogMilliseconds": 5000
+      },
+      "identitySharingAncestorStrategy": "Worker-owned target/entry handles retained during ordinary unforced Git call, but lost after worker exit while admitted descendant remains; this strategy is discarded",
+      "reproducedBoundaryCases": [
+        "cooperative observer cancellation starts first-stop deadline and stops later Git admission",
+        "empty clean-target status before retained handles",
+        "native target delete-open sharing refusal 32",
+        "ordinary Git exit128 during internal status operation: causal compatibility Partial",
+        "owned launcher/descendant stand-in uses shared command wait with injected200ms budget",
+        "original worker exits while descendant remains capable of DELETE access: lifetime failure",
+        "five-second deadline retains original internal QPC stop timestamp and is missed",
+        "owned termination and independently observed all-member exit before teardown",
+        "selected files/refs/registration/unselected data unchanged"
+      ],
+      "outsideScopeComparison": "Selected files, independent branch/registration bytes, outside sentinel and unselected generated/unknown ignored fixtures unchanged in all three scenarios; selected-content races unresolved",
+      "receiptBehavior": "Lifetime violation durably Invalidated separately from interrupted operation and unknown deletion count; strict owned Job drain follows; ordinary command remains historical Partial observation",
+      "matrix": [
+        {
+          "case": "target-rename-and-reparse-replacement",
+          "verdict": "Partial",
+          "evidence": "Not exercised in this fixed scenario; no promotion"
+        },
+        {
+          "case": "ancestor-rename-and-reparse-replacement",
+          "verdict": "Partial",
+          "evidence": "Not exercised in this fixed scenario; no promotion"
+        },
+        {
+          "case": "hardlink",
+          "verdict": "Partial",
+          "evidence": "Not exercised in this fixed scenario; no promotion"
+        },
+        {
+          "case": "alternate-data-stream",
+          "verdict": "Partial",
+          "evidence": "Not exercised in this fixed scenario; no promotion"
+        },
+        {
+          "case": "case-sensitive-directory",
+          "verdict": "Partial",
+          "evidence": "Not exercised in this fixed scenario; no promotion"
+        },
+        {
+          "case": "unicode-and-long-path",
+          "verdict": "Partial",
+          "evidence": "Not exercised in this fixed scenario; no promotion"
+        },
+        {
+          "case": "file-id-replacement-or-reuse",
+          "verdict": "Partial",
+          "evidence": "Not exercised in this fixed scenario; no promotion"
+        },
+        {
+          "case": "late-created-descendant",
+          "verdict": "Partial",
+          "evidence": "Not exercised in this fixed scenario; no promotion"
+        },
+        {
+          "case": "changed-descendant",
+          "verdict": "Partial",
+          "evidence": "Not exercised in this fixed scenario; no promotion"
+        },
+        {
+          "case": "tracked-source-content",
+          "verdict": "Partial",
+          "evidence": "Not exercised in this fixed scenario; no promotion"
+        },
+        {
+          "case": "protected-content",
+          "verdict": "Partial",
+          "evidence": "Not exercised in this fixed scenario; no promotion"
+        },
+        {
+          "case": "named-exclusion",
+          "verdict": "Partial",
+          "evidence": "Not exercised in this fixed scenario; no promotion"
+        },
+        {
+          "case": "policy-generation-change",
+          "verdict": "Partial",
+          "evidence": "Not exercised in this fixed scenario; no promotion"
+        },
+        {
+          "case": "external-conflicting-handle",
+          "verdict": "Partial",
+          "evidence": "Not exercised in this fixed scenario; no promotion"
+        },
+        {
+          "case": "cancel",
+          "verdict": "Invalidated",
+          "evidence": "Original worker proof handles ended while an admitted owned descendant remained capable of DELETE access; strategy discarded"
+        },
+        {
+          "case": "helper-failure",
+          "verdict": "Invalidated",
+          "evidence": "Original worker proof handles ended while an admitted owned descendant remained capable of DELETE access; strategy discarded"
+        },
+        {
+          "case": "process-death",
+          "verdict": "Invalidated",
+          "evidence": "Original worker proof handles ended while an admitted owned descendant remained capable of DELETE access; strategy discarded"
+        },
+        {
+          "case": "unsupported-volume",
+          "verdict": "Partial",
+          "evidence": "Not exercised in this fixed scenario; no promotion"
+        },
+        {
+          "case": "unsupported-reparse-state",
+          "verdict": "Partial",
+          "evidence": "Not exercised in this fixed scenario; no promotion"
+        },
+        {
+          "case": "entry-limit",
+          "verdict": "Partial",
+          "evidence": "Not exercised in this fixed scenario; no promotion"
+        },
+        {
+          "case": "handle-limit",
+          "verdict": "Partial",
+          "evidence": "Not exercised in this fixed scenario; no promotion"
+        },
+        {
+          "case": "operation-budget",
+          "verdict": "Partial",
+          "evidence": "Not exercised in this fixed scenario; no promotion"
+        },
+        {
+          "case": "drain-watchdog",
+          "verdict": "Invalidated",
+          "evidence": "Original worker proof handles ended while an admitted owned descendant remained capable of DELETE access; strategy discarded"
+        },
+        {
+          "case": "seeded-stress",
+          "verdict": "Partial",
+          "evidence": "Not exercised in this fixed scenario; no promotion"
+        },
+        {
+          "case": "git-registration-and-branch-preservation",
+          "verdict": "Partial",
+          "evidence": "Independent refs and registration bytes captured before/after; exact observations in receipt"
+        },
+        {
+          "case": "git-ignored-or-unknown-content",
+          "verdict": "Partial",
+          "evidence": "Unselected ignored/unknown synthetic data preserved; selected-content races unresolved"
+        }
+      ],
+      "nextExperiment": "Discard worker-owned proof strategy. Design supervisor/broker proof ownership surviving original worker loss until every admitted member is terminal, then independently qualify; no force or path fallback"
+    }
+  ],
+  "proposedContract": "adapter-contract.json",
+  "permanentDeletion": true,
+  "fallbacks": [],
+  "downstreamGate": "No destructive lane may be adopted from this candidate set; ownership qualification and all downstream build prerequisites remain independent"
+}

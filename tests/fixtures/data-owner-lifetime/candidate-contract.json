@@ -1,0 +1,29 @@
+{
+  "schema": "reclaim.private-owner-candidate-contract/1",
+  "strategy": "Exclusive lease-file handle duplicated into each admitted actor",
+  "productionEnabled": false,
+  "primarySources": [
+    "https://learn.microsoft.com/en-us/windows/win32/api/handleapi/nf-handleapi-duplicatehandle",
+    "https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createfilew",
+    "https://learn.microsoft.com/en-us/windows/win32/api/handleapi/nf-handleapi-closehandle"
+  ],
+  "supportedLane": "None qualified; disposable local NTFS native experiment only",
+  "acquire": "CreateFileW GENERIC_READ|GENERIC_WRITE, share=0, OPEN_ALWAYS at text data path; acquisition is physical lease availability, not state consistency",
+  "admit": "Owned Job exists first; create actor suspended, retain creation handle, assign and verify exact Job, DuplicateHandle exclusive lease into target process, record identity, then resume",
+  "actors": [
+    {"role": "controller", "stateAuthority": false, "reference": "Initial exclusive lease until all three duplicates are verified; then closes", "supervision": "Retains original creation handles and owned Job until original exits plus Job zero"},
+    {"role": "helper", "stateAuthority": false, "reference": "Duplicate of same exclusive lease kernel file object; injected real death closes only its reference"},
+    {"role": "writer", "stateAuthority": true, "reference": "Duplicate lease through actual atomic File.Replace publication; closes when admitted operation ends", "resource": "Text data path/state.json"},
+    {"role": "mutator", "stateAuthority": true, "reference": "Duplicate lease through actual selected disposable payload deletion; closes when admitted operation ends", "resource": "Text data path/disposable-payload"},
+    {"role": "contender", "stateAuthority": "Lease acquisition only; recovery remains Unknown; no state reset/recovery claim", "reference": "Independent exclusive open on current text path, held until observer finishes"},
+    {"role": "observer", "stateAuthority": false, "reference": "Original A process identities, independent lease attempts and actual byte/mutation observations"},
+    {"role": "replacer", "stateAuthority": "Fixture-only adversary", "reference": "Contained before mutation; renames selected ancestor and seeds replacement physical directory"}
+  ],
+  "stop": "No new actors/admissions after helper death; earliest native stop QPC and durable request recovery use reviewed shared WP1 mechanism; cancel immediately, retain all supervision",
+  "cancelAndDrain": "Shared 60-second operation and 5-second earliest-stop watchdog; native action obligations independent of logging and retried until exact original exits plus exact Job zero",
+  "release": "Last duplicate close releases physical file sharing exclusion; no PID-age stealing or EOF-based drain claim",
+  "fence": "Exclusive reference prevents another opener on the same physical file. No ancestor directory references or namespace fencing are provided by this candidate",
+  "recovery": "Unknown after real death or inconsistent evidence; no automatic reset, retry or recovery mutation; all fixture bytes/receipts archived",
+  "authorityGapUnderTest": "A retained old physical lease may fail to cover direct text-path writes after ancestor replacement; this schedule decides rejection or a bounded Partial result",
+  "productionRegistry": "Not implemented; eventual API must be opaque ownership plus tracked admit/stop/cancel/drained registry, never raw handles exposed through HTTP"
+}

@@ -1,0 +1,58 @@
+{
+  "schema": "reclaim.cleanup-identity-fixtures/1",
+  "scope": "Disposable fixtures only; no production adapter or cleanup capability",
+  "lanes": ["generated", "git-worktree-unforced"],
+  "limits": {
+    "entries": 250000,
+    "retainedHandles": 512,
+    "operationMilliseconds": 60000,
+    "drainWatchdogMilliseconds": 5000
+  },
+  "roles": {
+    "rootPrefix": "reclaim-cleanup-identity-",
+    "project": "project",
+    "target": "project/dist",
+    "preservedTarget": "project/original-dist",
+    "outsidePreview": "outside-preview",
+    "payload": "payload"
+  },
+  "baseline": {
+    "strategy": "current-js-path-check-then-unlink",
+    "schedule": "replace-target-with-junction-immediately-before-final-unlink",
+    "expectedVerdict": "Invalidated",
+    "expectedOperationStatus": "partial",
+    "expectedDeletedFiles": 1,
+    "outsidePreviewFileDeleted": true,
+    "previewedFileRetained": true,
+    "method": "Deterministic in-process interleaving; not an external-actor qualification"
+  },
+  "nativeBoundarySchedule": [
+    "before-root-open", "after-root-open",
+    "before-ancestor-open", "after-ancestor-open",
+    "before-entry-open", "after-entry-open",
+    "before-identity-check", "after-identity-check",
+    "before-policy-check", "after-policy-check",
+    "before-file-disposition", "after-file-disposition",
+    "before-directory-removal", "after-directory-removal"
+  ],
+  "requiredCases": [
+    "target-rename-and-reparse-replacement", "ancestor-rename-and-reparse-replacement",
+    "hardlink", "alternate-data-stream", "case-sensitive-directory",
+    "unicode-and-long-path", "file-id-replacement-or-reuse",
+    "late-created-descendant", "changed-descendant", "tracked-source-content",
+    "protected-content", "named-exclusion", "policy-generation-change",
+    "external-conflicting-handle", "cancel", "helper-failure", "process-death",
+    "unsupported-volume", "unsupported-reparse-state", "entry-limit",
+    "handle-limit", "operation-budget", "drain-watchdog", "seeded-stress",
+    "git-registration-and-branch-preservation", "git-ignored-or-unknown-content"
+  ],
+  "invariants": [
+    "outside-preview bytes and link identities remain unchanged for a qualified strategy",
+    "only previewed identities may be removed; a late object is never permission",
+    "observe actual files independently from operation receipts",
+    "started, partial and interrupted receipts retain uncertainty",
+    "a watchdog miss invalidates the strategy separately from operation status",
+    "unknown helper exit retains supervision and fixtures; no cleanup or successor mutator",
+    "generated qualification never qualifies Git; no path-based or force-Git fallback"
+  ]
+}
