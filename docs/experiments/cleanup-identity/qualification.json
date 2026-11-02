@@ -2,6 +2,8 @@
   "schema": "reclaim.cleanup-identity-qualification/1",
   "overallVerdict": "Invalidated",
   "productionEnabled": false,
+  "experimentSourceCommit": "8ad116c7a09213f34193c4cf455fddf253d283b4",
+  "sourceIdentityScope": "Historical exact inputs to the recorded rejection packets. Subsequent integration-only fixture drain corrections do not rewrite those snapshots or qualify a production lane.",
   "qualifiedLanes": [],
   "interpretation": "Harness assertions passed; no operator lane is Validated. Generated and Git verdicts are independent. This does not alter existing production code.",
   "hostScope": {

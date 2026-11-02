@@ -228,6 +228,13 @@ and the [Job member-list layout](https://learn.microsoft.com/en-us/windows/win32
 ground the collision check.
 These establish primitives; they do not establish recursive containment or policy safety.
 
+The machine-readable report pins the historical rejection inputs to their source
+commit. A later integration correction makes the collision fixture poll all owned
+members to zero after the original member exits, rather than assert immediate
+zero while runtime children may still be draining. It uses one first-release
+deadline and a controlled held member to exercise that interval. The earlier
+packets remain immutable; this harness correction does not qualify a deletion lane.
+
 ## WP-3: unforced Git lane and disabled adapter proposal
 
 **Git candidate verdict: Invalidated. Production enabled: false.** The ordinary

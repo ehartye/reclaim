@@ -221,15 +221,56 @@ public static class CleanupIdentityPrototype {
       if(worker.process!=IntPtr.Zero)CloseHandle(worker.process);CloseHandle(job);
     }
   }
+  static void CollisionDiagnostic(string name,object value) {
+    try{Save(name,value);}catch(Exception e){Event("collision-diagnostic-error","file",name,"reason",e.Message);}
+  }
+  static void DrainCollision(IntPtr job,ProcessInfo member,ProcessInfo delayed,ref bool exited,ref bool delayedExited,ref bool zero,ref long stopAt,ref bool watchdog,ref bool transientObserved) {
+    // There is one first-stop clock for the original process and every owned Job
+    // member. A parent exit never starts a replacement grace period.
+    if(stopAt==0){stopAt=Stopwatch.GetTimestamp();Event("collision-stop-requested","reason","exception-cleanup","requestedQpc",stopAt.ToString(),"deadlineQpc",(stopAt+5*Stopwatch.Frequency).ToString());}
+    CollisionDiagnostic("collision-release",D("release",true,"requestedQpc",stopAt.ToString()));
+    bool delayedRelease=false;
+    while(true) {
+      exited=member.process==IntPtr.Zero||WaitForSingleObject(member.process,0)==0;
+      delayedExited=delayed.process==IntPtr.Zero||WaitForSingleObject(delayed.process,0)==0;
+      Accounting accounting;bool queried=QueryInformationJobObject(job,1,out accounting,(uint)Marshal.SizeOf(typeof(Accounting)),IntPtr.Zero);zero=queried&&accounting.active==0;
+      long now=Stopwatch.GetTimestamp();
+      if(exited&&!delayedExited&&queried&&accounting.active>0&&!delayedRelease) {
+        transientObserved=true;delayedRelease=true;
+        Event("collision-original-exited-with-members","originalMemberExited",true,"delayedMemberExited",false,"jobActive",accounting.active);
+        CollisionDiagnostic("collision-delayed-release",D("release",true,"firstStopQpc",stopAt.ToString()));
+      }
+      if(now-stopAt>=5*Stopwatch.Frequency&&!watchdog) {
+        watchdog=true;Event("collision-drain-watchdog-missed","elapsedMilliseconds",(now-stopAt)*1000/Stopwatch.Frequency);
+        CollisionDiagnostic("collision-pending.json",D("strategyVerdict","Invalidated","operationReceipt",D("status","interrupted","deletedFiles",null,"uncertainty","First-stop collision drain deadline missed"),"originalMemberExited",exited,"delayedMemberExited",delayedExited,"jobActive",queried?(object)accounting.active:null,"trace",trace));
+      }
+      if(exited&&delayedExited&&zero){Event("collision-strict-drain","originalMemberExited",true,"delayedMemberExited",true,"jobActive",0);return;}
+      if(watchdog) {
+        // Diagnostics must never prevent termination. A failure to terminate or
+        // query remains supervised with both creation handles and the Job held.
+        bool terminated=TerminateJobObject(job,99);int nativeError=terminated?0:Marshal.GetLastWin32Error();
+        if(!terminated)Event("collision-termination-unresolved","nativeError",nativeError);
+      }
+      Thread.Sleep(10);
+    }
+  }
+  static int CollisionDelayedMember() {
+    RequireContained();File.WriteAllText(P("collision-delayed-ready"),"owned delayed member ready");
+    while(!File.Exists(P("collision-delayed-release")))Thread.Sleep(5);
+    // Controlled asynchronous drain: the original member has already exited,
+    // but exact Job accounting must remain nonzero until this member finishes.
+    Thread.Sleep(250);return 0;
+  }
   static int Collision() {
     // This fixture alone owns the deliberately pre-existing container and member.
     IntPtr job=CreateJobObjectW(IntPtr.Zero,JobName());int createError=Marshal.GetLastWin32Error();Check(job!=IntPtr.Zero,"Collision fixture CreateJob");
     if(createError==183){CloseHandle(job);throw new IOException("Collision fixture could not establish new ownership");}
-    var original=new Limits();original.basic.flags=0x2008;original.basic.active=2;
+    var original=new Limits();original.basic.flags=0x2008;original.basic.active=8;
     Check(SetInformationJobObject(job,9,ref original,(uint)Marshal.SizeOf(typeof(Limits))),"Collision fixture limits");
-    ProcessInfo member=new ProcessInfo();bool exited=false,zero=false;
+    ProcessInfo member=new ProcessInfo(),delayed=new ProcessInfo();bool exited=false,delayedExited=false,zero=false,watchdog=false,transientObserved=false;long stopAt=0;
     try {
       member=Spawn("collision-member",job);AwaitMarker("collision-member-ready");
+      delayed=Spawn("collision-delayed-member",job);AwaitMarker("collision-delayed-ready");
       Limits before;Check(QueryJobLimits(job,9,out before,(uint)Marshal.SizeOf(typeof(Limits)),IntPtr.Zero),"Collision before limits");
       Accounting beforeMembers;Check(QueryInformationJobObject(job,1,out beforeMembers,(uint)Marshal.SizeOf(typeof(Accounting)),IntPtr.Zero),"Collision before accounting");
       string[] beforeIds=MemberIds(job);
@@ -240,15 +281,15 @@ public static class CleanupIdentityPrototype {
       bool memberAlive=WaitForSingleObject(member.process,0)==258;
       Event("collision-observation","refusedExitCode",refused,"beforeFlags",before.basic.flags,"afterFlags",after.basic.flags,"beforeActiveLimit",before.basic.active,"afterActiveLimit",after.basic.active,"beforeActiveMembers",beforeMembers.active,"afterActiveMembers",active.active,"beforeMemberIds",beforeIds,"afterMemberIds",afterIds,"originalMemberAlive",memberAlive);
       Save("collision-observation.json",D("trace",trace));
-      Check(refused==4&&before.basic.flags==after.basic.flags&&before.basic.active==after.basic.active&&active.active==beforeMembers.active&&String.Join(",",beforeIds)==String.Join(",",afterIds)&&memberAlive,"Existing container unchanged");
+      Check(refused==4&&before.basic.flags==after.basic.flags&&before.basic.active==after.basic.active&&active.active==beforeMembers.active&&String.Join(",",beforeIds)==String.Join(",",afterIds)&&memberAlive&&WaitForSingleObject(delayed.process,0)==258,"Existing container unchanged");
       Event("collision-container-unchanged","beforeFlags",before.basic.flags,"afterFlags",after.basic.flags,"beforeActiveLimit",before.basic.active,"afterActiveLimit",after.basic.active,"activeMembers",active.active,"originalMemberAlive",memberAlive);
-      Save("collision-release",D("release",true));Check(WaitForSingleObject(member.process,5000)==0,"Collision member exit");exited=true;
-      Accounting drained;Check(QueryInformationJobObject(job,1,out drained,(uint)Marshal.SizeOf(typeof(Accounting)),IntPtr.Zero),"Collision strict drain");zero=drained.active==0;Check(zero,"Collision members zero");
-      Save("supervisor.json",D("mode",mode,"collisionRefused",true,"existingContainerUnchanged",true,"originalMemberAliveAfterRefusal",memberAlive,"containerOwnedByCollisionFixture",true,"primaryExited",exited,"jobActive",0,"watchdogMissed",false,"strategyVerdict","Partial","operationReceipt",D("status","refused","deletedFiles",0),"trace",trace));return 0;
+      stopAt=Stopwatch.GetTimestamp();Event("collision-stop-requested","reason","release-members","requestedQpc",stopAt.ToString(),"deadlineQpc",(stopAt+5*Stopwatch.Frequency).ToString());
+      DrainCollision(job,member,delayed,ref exited,ref delayedExited,ref zero,ref stopAt,ref watchdog,ref transientObserved);
+      Save("supervisor.json",D("mode",mode,"collisionRefused",true,"existingContainerUnchanged",true,"originalMemberAliveAfterRefusal",memberAlive,"containerOwnedByCollisionFixture",true,"primaryExited",exited,"delayedMemberExited",delayedExited,"collisionTransientObserved",transientObserved,"jobActive",0,"watchdogMissed",watchdog,"strategyVerdict",watchdog?"Invalidated":"Partial","operationReceipt",D("status",watchdog?"interrupted":"refused","deletedFiles",watchdog?null:(object)0),"stopRequestedQpc",stopAt.ToString(),"drainObservedQpc",Stopwatch.GetTimestamp().ToString(),"qpcFrequency",Stopwatch.Frequency.ToString(),"trace",trace));return watchdog?2:0;
     }finally {
-      if(!exited||!zero){Save("collision-release",D("release",true));TerminateJobObject(job,99);while(true){Accounting a;bool terminal=member.process==IntPtr.Zero||WaitForSingleObject(member.process,100)==0;if(QueryInformationJobObject(job,1,out a,(uint)Marshal.SizeOf(typeof(Accounting)),IntPtr.Zero)&&a.active==0&&terminal)break;Thread.Sleep(10);}}
-      Save("collision-drain.json",D("originalMemberExited",member.process==IntPtr.Zero||WaitForSingleObject(member.process,0)==0,"jobActive",0,"trace",trace));
-      if(member.process!=IntPtr.Zero)CloseHandle(member.process);CloseHandle(job);
+      if(!exited||!delayedExited||!zero)DrainCollision(job,member,delayed,ref exited,ref delayedExited,ref zero,ref stopAt,ref watchdog,ref transientObserved);
+      CollisionDiagnostic("collision-drain.json",D("originalMemberExited",exited,"delayedMemberExited",delayedExited,"jobActive",0,"watchdogMissed",watchdog,"strategyVerdict",watchdog?"Invalidated":"Partial","operationStatus",watchdog?"interrupted":"refused","firstStopQpc",stopAt.ToString(),"trace",trace));
+      if(member.process!=IntPtr.Zero)CloseHandle(member.process);if(delayed.process!=IntPtr.Zero)CloseHandle(delayed.process);CloseHandle(job);
     }
   }
   public static int Main(string[] args) {
@@ -257,7 +298,7 @@ public static class CleanupIdentityPrototype {
       ValidateRoot(args[1]);mode=args[2];
       string[] allowed={"ordinary","target-rename","ancestor-rename","changed-descendant","late-created-descendant","hardlink","alternate-stream","conflicting-handle","cancel","helper-failure","unicode","blocked-cancel","job-collision"};
       if(Array.IndexOf(allowed,mode)<0)throw new IOException("Unsupported fixture case");
-      if(args[0]=="supervisor")return Supervisor();if(args[0]=="worker")return Worker();if(args[0]=="actor")return Actor();if(args[0]=="collision")return Collision();if(args[0]=="collision-member"){RequireContained();Save("collision-member-ready",D("ready",true));while(!File.Exists(P("collision-release")))Thread.Sleep(5);return 0;}throw new IOException("Unsupported fixture role");
+      if(args[0]=="supervisor")return Supervisor();if(args[0]=="worker")return Worker();if(args[0]=="actor")return Actor();if(args[0]=="collision")return Collision();if(args[0]=="collision-delayed-member")return CollisionDelayedMember();if(args[0]=="collision-member"){RequireContained();Save("collision-member-ready",D("ready",true));while(!File.Exists(P("collision-release")))Thread.Sleep(5);return 0;}throw new IOException("Unsupported fixture role");
     }catch(Exception e){try{Save("error-"+Process.GetCurrentProcess().Id+".json",D("error",e.Message,"trace",trace));}catch{}return 3;}
   }
 }

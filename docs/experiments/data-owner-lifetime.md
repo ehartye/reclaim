@@ -60,8 +60,21 @@ uncertainty and experimental supervision remain separate dimensions.
 ## Retained-reference candidate: Partial
 
 ```powershell
-node --test tests/data-owner-reference-qualification.test.mjs
+node --test tests/data-owner-lifetime-qualification.test.mjs
+# Use the UUID printed by that successful current-source baseline packet.
+$ownerPriorRegression = $env:RECLAIM_OWNER_WP1_REGRESSION
+try {
+  $env:RECLAIM_OWNER_WP1_REGRESSION = '<successful WP1 run UUID>'
+  node --test tests/data-owner-reference-qualification.test.mjs
+} finally {
+  $env:RECLAIM_OWNER_WP1_REGRESSION = $ownerPriorRegression
+}
 ```
+
+The reference candidate intentionally skips without an explicit current baseline
+receipt. It verifies that packet's source hashes and terminal evidence before
+starting any actor. The same environment value includes the candidate in a full
+`npm test` run; it does not bypass a failed or stale baseline.
 
 The candidate creates an exclusive lease-file open and duplicates that same native
 object into the already contained, suspended helper, writer and mutator. Each

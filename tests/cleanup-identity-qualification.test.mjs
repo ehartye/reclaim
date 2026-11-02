@@ -115,6 +115,15 @@ test("native cleanup evidence preserves failures, strict drain and Invalidated w
           assert(await readOptional(path.join(fixture, "supervisor-pending.json")), "Invalidation durable before termination/drain");
         } else if (name === "job-collision") {
           assert.equal(processResult.exitCode, 0); assert.equal(supervisor.collisionRefused, true); assert.equal(supervisor.existingContainerUnchanged, true); assert.equal(supervisor.originalMemberAliveAfterRefusal, true);
+          assert.equal(supervisor.delayedMemberExited, true); assert.equal(supervisor.collisionTransientObserved, true); assert.equal(supervisor.watchdogMissed, false);
+          const firstStop = supervisor.trace.filter((event) => event.event === "collision-stop-requested");
+          assert.equal(firstStop.length, 1, "Original exit must not reset the first-stop deadline");
+          const transient = supervisor.trace.find((event) => event.event === "collision-original-exited-with-members"), terminal = supervisor.trace.find((event) => event.event === "collision-strict-drain");
+          assert(transient && transient.originalMemberExited && !transient.delayedMemberExited && transient.jobActive > 0, "Controlled delayed member must survive original member exit");
+          assert(BigInt(terminal.qpc) > BigInt(transient.qpc));
+          const drainMs = Number(BigInt(terminal.qpc) - BigInt(supervisor.stopRequestedQpc)) * 1000 / Number(supervisor.qpcFrequency);
+          const afterOriginalMs = Number(BigInt(terminal.qpc) - BigInt(transient.qpc)) * 1000 / Number(supervisor.qpcFrequency);
+          assert(drainMs < 5000 && afterOriginalMs >= 200, `One first-stop drain ${drainMs}ms; controlled post-original drain ${afterOriginalMs}ms`);
           const refusal = await readOptional(path.join(fixture, "collision-refusal.json"));
           assert.equal(refusal.nativeError, 183); assert.equal(refusal.containerOwned, false); assert.equal(refusal.workerSpawned, false); assert.deepEqual(after.payload, before.payload);
         } else {
