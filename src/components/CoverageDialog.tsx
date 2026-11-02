@@ -2,6 +2,19 @@ import { X } from "lucide-react";
 import { Dialog } from "./Dialog";
 import { bytes } from "../types";
 import type { Scan } from "../types";
+import { presentScanCoverage } from "../scan-coverage";
+function Paths({ entries }: { entries: Scan["skipped"] }) {
+  return (
+    <>
+      {entries.map((entry, index) => (
+        <div className="coverage-item" key={index}>
+          <code>{entry.path}</code>
+          <small>{entry.reason}</small>
+        </div>
+      ))}
+    </>
+  );
+}
 export function CoverageDialog({
   scan,
   onClose,
@@ -9,6 +22,7 @@ export function CoverageDialog({
   scan: Scan;
   onClose: () => void;
 }) {
+  const coverage = presentScanCoverage(scan);
   return (
     <Dialog label="Scan coverage" onClose={onClose}>
       <div className="modal-heading">
@@ -19,67 +33,98 @@ export function CoverageDialog({
         <button
           className="icon-btn"
           aria-label="Close coverage"
-          onClick={() => onClose()}
+          onClick={onClose}
         >
           <X size={20} />
         </button>
       </div>
       <div className="coverage-summary">
         <span>
-          <b>{scan.fileCount.toLocaleString()}</b> files
+          <b>{scan.fileCount.toLocaleString()}</b> files counted
         </span>
         <span>
-          <b>{scan.directoryCount.toLocaleString()}</b> folders
+          <b>{scan.directoryCount.toLocaleString()}</b> folders recorded
         </span>
         <span>
-          <b>{scan.status}</b> status
+          <b>{coverage.label}</b> scan outcome
         </span>
       </div>
-      <div className="coverage-body">
-        <h3>Scan limits</h3>
-        {scan.folderSizing ? (
-          <p>
-            Folder totals scan · no full-scan file cap · logical file-entry
-            sizes · exclusions and link/cloud/system protections apply.
-          </p>
-        ) : (
-          <p>
-            {scan.options.maxFiles.toLocaleString()} files maximum ·{" "}
-            {bytes(scan.options.minimumBytes)} minimum finding ·{" "}
-            {scan.options.staleDays} days old · duplicate checks{" "}
-            {scan.options.duplicates ? "on" : "off"}
-          </p>
+      <div className="coverage-body coverage-decision">
+        <p className="coverage-lead">{coverage.summary}</p>
+        {coverage.issueCount > 0 && (
+          <section>
+            <h3>Needs attention ({coverage.issueCount} recorded)</h3>
+            <p>
+              Unreadable or changing folders can leave gaps. Review these paths;
+              retry a narrower scan when access or activity permits.
+            </p>
+            <Paths entries={scan.errors} />
+            <Paths entries={coverage.unresolved} />
+          </section>
         )}
-        {scan.notices.map((n) => (
-          <div className="alert" key={n}>
-            {n}
-          </div>
-        ))}
-        <h3>
-          Skipped paths ({scan.skipped.length}
-          {scan.skipped.length === 1000 ? "+" : ""})
-        </h3>
-        {scan.skipped.length ? (
-          scan.skipped.map((s, i) => (
-            <div className="coverage-item" key={i}>
-              <code>{s.path}</code>
-              <small>{s.reason}</small>
-            </div>
-          ))
-        ) : (
-          <p>No skipped paths were recorded.</p>
+        {coverage.cacheNotices.length > 0 && (
+          <section>
+            <h3>Cache was not saved</h3>
+            <p>
+              These scan results remain available. A later scan may need to
+              count folders again.
+            </p>
+            {coverage.cacheNotices.map((notice, index) => (
+              <p key={index}>{notice}</p>
+            ))}
+          </section>
         )}
-        <h3>Errors ({scan.errors.length})</h3>
-        {scan.errors.map((s, i) => (
-          <div className="coverage-item" key={i}>
-            <code>{s.path}</code>
-            <small>{s.reason}</small>
-          </div>
-        ))}
-        <p className="fine-print">
-          Skipped and error lists retain the first 1,000 entries each. A partial
-          scan only describes the files it could analyze.
-        </p>
+        <section>
+          <h3>What the sizes cover</h3>
+          <p>{coverage.sizeExplanation}</p>
+          <p>
+            Parent and child totals overlap. Logical file-entry sizes can count
+            hardlinked names more than once; they are not physical deletion
+            savings.
+          </p>
+        </section>
+        <section>
+          <h3>Exclusions and protections</h3>
+          <p>
+            These entries were deliberately not inspected. They do not by
+            themselves mean the scan failed. Their contents remain outside the
+            measured totals.
+          </p>
+          {coverage.groups.map((group) => (
+            <details className="coverage-group" key={group.label}>
+              <summary>
+                {group.label}{" "}
+                <span>({group.paths.length.toLocaleString()} recorded)</span>
+              </summary>
+              <Paths entries={group.paths} />
+            </details>
+          ))}
+          {!coverage.groups.length && (
+            <p>No recognized exclusions or protections were recorded.</p>
+          )}
+          <p className="fine-print">
+            {coverage.truncated
+              ? "This report reached the 1,000-entry detail limit. These are recorded samples, not complete category totals; further omissions or errors may be absent."
+              : "Counts describe recorded entries in this saved report."}{" "}
+            A grouped link/offline/cloud reason does not identify which
+            protection applied.
+          </p>
+        </section>
+        <details className="coverage-group">
+          <summary>Scan settings and diagnostics</summary>
+          <p>
+            Recorded status: {scan.status}. Recorded at:{" "}
+            {scan.completedAt || scan.startedAt}.
+          </p>
+          <p>
+            {scan.folderSizing
+              ? "Folder totals scan; no full-scan file cap. Exclusions and link/cloud/system protections apply."
+              : `${scan.options.maxFiles.toLocaleString()} files maximum · ${bytes(scan.options.minimumBytes)} minimum finding · ${scan.options.staleDays} days old · duplicate checks ${scan.options.duplicates ? "on" : "off"}`}
+          </p>
+          {coverage.notices.map((notice, index) => (
+            <p key={index}>{notice}</p>
+          ))}
+        </details>
       </div>
     </Dialog>
   );

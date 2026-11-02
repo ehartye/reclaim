@@ -4,6 +4,7 @@ import { ScanDialog } from "./components/ScanDialog";
 import { OpportunityTable } from "./components/OpportunityTable";
 import { FindingDrawer } from "./components/FindingDrawer";
 import { CoverageDialog } from "./components/CoverageDialog";
+import { presentScanCoverage } from "./scan-coverage";
 import { CleanupDialog } from "./components/CleanupDialog";
 import { Development } from "./components/Development";
 import { LargeFolders } from "./components/LargeFolders";
@@ -73,6 +74,7 @@ function App() {
   const [state, setState] = useState<State | null>(null),
     [scan, setScan] = useState<Scan>(sample),
     [view, setView] = useState<View>("Folders");
+  const scanCoverage = useMemo(() => presentScanCoverage(scan), [scan]);
   const [review, setReview] = useState<Review>(normalizeReview()),
     [scanOpen, setScanOpen] = useState(false),
     [detail, setDetail] = useState<Finding | null>(null);
@@ -733,12 +735,10 @@ function App() {
               </button>
             </div>
           )}
-          {!isSample && scan.status !== "completed" && (
+          {!isSample && scanCoverage.showBanner && (
             <div className="alert">
               <TriangleAlert size={18} />
-              {scan.status === "cancelled"
-                ? "This scan was stopped. Results cover only the files scanned."
-                : "This scan is partial. Some paths could not be analyzed."}
+              {scanCoverage.summary}
               <button onClick={() => setCoverage(true)}>View coverage</button>
             </div>
           )}
