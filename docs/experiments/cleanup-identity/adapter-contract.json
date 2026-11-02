@@ -1,0 +1,50 @@
+{
+  "schema": "reclaim.cleanup-identity-adapter-proposal/1",
+  "proposalOnly": true,
+  "productionAdapterProvided": false,
+  "enabledLanes": [],
+  "laneGates": {
+    "generated-file-removal": "Disabled: measured candidate Invalidated by a missed first-cancel drain deadline",
+    "unforced-git-worktree-removal": "Disabled: worker-owned proof strategy Invalidated when an admitted descendant outlived its proof handles; clean-command compatibility observation remains Partial"
+  },
+  "httpBoundary": {
+    "allowedReferences": ["server-issued routine run ID", "server-issued candidate ID", "server-issued preview ID"],
+    "forbiddenInputs": ["arbitrary execution paths", "raw native handles", "native flags", "Git force options"],
+    "changesExistingRoutes": false
+  },
+  "serverOwnedProof": {
+    "proofId": "opaque, expiring and single-use where execution is authorized",
+    "operatorLane": "independently qualified exact operator/platform/filesystem",
+    "rootIdentity": ["volume identity", "file identity", "retained ancestor/object proof"],
+    "entries": ["expected parent and entry identities", "type and metadata", "link and stream restrictions", "preview membership"],
+    "policyGeneration": "expected generation; changes refuse before affecting blocked objects",
+    "parameters": "validated server-owned snapshot; never a client replacement manifest"
+  },
+  "limits": {
+    "entries": 250000,
+    "retainedObjectHandles": 512,
+    "operationMilliseconds": 60000,
+    "firstStopDrainMilliseconds": 5000,
+    "qualifiedAtTheseLimits": false
+  },
+  "supervision": {
+    "beforeMutation": "newly owned native process container, verified suspended child membership before resume",
+    "namedCollision": "refuse before changing limits, spawning or terminating members",
+    "firstStop": "start one monotonic drain deadline immediately on first cancellation, stop or operation-budget request",
+    "deadlineMiss": "strategy Invalidated; operation interrupted; preserve uncertainty separately",
+    "afterDeadlineMiss": "retain supervision; terminate only verified owned container; observe original process handles signaled and all members exited",
+    "unknownExit": "retain authority, supervision and fixtures; no successor mutator or teardown",
+    "release": "only after independent terminal observations; no PID-age assumption"
+  },
+  "operationResults": {
+    "complete": "actual requested work finished under a validated proof",
+    "refused": "no destructive work authorized or started; reason retained",
+    "partial": "actual completed work and remaining restrictions recorded",
+    "interrupted": "execution did not settle normally; unknown deletion counts remain unknown"
+  },
+  "qualificationVerdicts": ["Validated", "Partial", "Invalidated"],
+  "permanentDeletion": true,
+  "fallbacks": [],
+  "automaticRetryOrResume": false,
+  "adoptionGate": "All required deterministic, real-actor, policy, resource and lifetime cases plus independent review for the exact lane; downstream ownership requirements remain separate"
+}
