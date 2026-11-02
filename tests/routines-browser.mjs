@@ -141,6 +141,481 @@ await page.route("**/api/routines", async (route) => {
     await route.fulfill({ json: fixtureCatalog });
   } else await route.continue();
 });
+
+const row = (id) => page.locator(`[data-routine-row='${id}']`);
+const choice = (id) => page.locator(`[data-routine-id='${id}']`);
+async function openRoutine(id) {
+  if ((await choice(id).getAttribute("aria-expanded")) !== "true")
+    await choice(id).click();
+}
+async function openSettings() {
+  if ((await page.locator("#routine-settings").getAttribute("open")) === null)
+    await page.locator("#routine-settings > summary").click();
+}
+async function openEvidence() {
+  if ((await page.locator("#routine-evidence").getAttribute("open")) === null)
+    await page.locator("#routine-evidence > summary").click();
+}
+
+async function verifyDecisionWorkspace() {
+  const catalog = await (
+    await page.request.get(
+      `http://127.0.0.1:${app.server.address().port}/api/routines`,
+    )
+  ).json();
+  fixtureCatalog = structuredClone(catalog);
+  fixtureCatalog.invalidPresets = {};
+  const commandScope = path.join(root, "qualified-cache");
+  const guide = (qualified) => ({
+    title: qualified
+      ? "Fixture qualified maintenance"
+      : "Fixture documentation only",
+    mode: qualified ? "guided" : "review-only",
+    qualified,
+    steps: [
+      "Close the owning tool and review the exact cache scope.",
+      "Choose whether to follow the owner procedure.",
+    ],
+    notices: ["Fixture guide notice retained in full."],
+    // An unqualified response carrying commands must still never expose them.
+    commands: [
+      {
+        label: "Verify fixture cache",
+        command: "npm cache verify --cache fixture-only",
+        scope: commandScope,
+        mutates: true,
+        effects: "Validates cache entries and changes stored cache data.",
+        optional: true,
+      },
+    ],
+    evidence: ["https://docs.npmjs.com/cli/v11/commands/npm-cache"],
+  });
+  const candidate = (id, bytes, extra = {}) => ({
+    id: `decision-${id}`,
+    path: path.join(root, `decision-${id}`),
+    label: "Fixture folder",
+    mode: "review-only",
+    cleanupSupported: false,
+    reason: "Review only. This folder has no established cleanup procedure.",
+    logicalBytes: bytes,
+    estimated: false,
+    complete: true,
+    recordedAt: completedAt,
+    ...extra,
+  });
+  let held = null,
+    failIndividual = false;
+  fixtureRun = async (route, body) => {
+    if (held && body.routineId === "generated-output") await held.promise;
+    if (
+      body.routineId === "nvidia-shaders" ||
+      (failIndividual && body.routineId === "generated-output")
+    )
+      return route.fulfill({
+        status: 409,
+        json: {
+          error: "Fixture decision check failed; retry when the tool is idle.",
+        },
+      });
+    const candidates =
+      body.routineId === "generated-output"
+        ? [
+            candidate("eligible", 600000001, {
+              mode: "in-app",
+              cleanupSupported: true,
+              reason: "Generated output can be rebuilt.",
+              restore: "Run the project build.",
+            }),
+            candidate("blocked", null, {
+              mode: "in-app",
+              cleanupSupported: true,
+              blockedReason:
+                "Preserve this folder: its credentials and local configuration have no verified restoration source.",
+            }),
+          ]
+        : body.routineId === "unreal-zen"
+          ? [
+              candidate("zen", 109000000000, {
+                estimated: true,
+                complete: false,
+                blockedReason:
+                  "Referenced cooked output may still be required. No safe cleanup is established for this store.",
+              }),
+            ]
+          : body.routineId === "unreal-ddc"
+            ? [
+                candidate("ddc", 2000000000, {
+                  estimated: true,
+                  complete: false,
+                }),
+                candidate("unknown-ddc", null),
+              ]
+            : body.routineId === "npm-cache"
+              ? [
+                  candidate("guided", 700000000, {
+                    mode: "guided",
+                    guide: guide(true),
+                  }),
+                ]
+              : body.routineId === "pip-cache"
+                ? [
+                    candidate("unqualified", null, {
+                      mode: "guided",
+                      guide: guide(false),
+                    }),
+                  ]
+                : body.routineId === "windows-temporary"
+                  ? []
+                  : [candidate(body.routineId, null)];
+    const partial = ["unreal-ddc", "unreal-zen"].includes(body.routineId);
+    return route.fulfill({
+      json: {
+        id: `decision-run-${body.routineId}`,
+        routineId: body.routineId,
+        policyVersion: 1,
+        parameters: { routineId: body.routineId, ...body.parameters },
+        ...(body.scanId ? { scanId: body.scanId } : {}),
+        checkedAt: await page.evaluate(() => new Date().toISOString()),
+        candidates,
+        coverage: {
+          complete: !partial,
+          candidateCount: candidates.length + (partial ? 1 : 0),
+          checkedDirectories: candidates.length,
+          errors: partial
+            ? [
+                {
+                  path: path.join(root, "unavailable-evidence"),
+                  reason: "Fixture coverage evidence unavailable.",
+                },
+              ]
+            : [],
+        },
+        notices: [
+          "Fixture complete server notice retained in supporting evidence.",
+        ],
+      },
+    });
+  };
+  await page.getByRole("button", { name: "Folders", exact: true }).click();
+  await page.getByRole("button", { name: "Routines", exact: true }).click();
+  await expect(page.locator(".routine-comparison-row")).toHaveCount(14);
+  await expect(page.locator(".routine-detail")).toHaveCount(0);
+  expect(await page.getByRole("columnheader").allTextContents()).toEqual([
+    "Routine",
+    "Recorded size",
+    "What you can do",
+    "Risk",
+  ]);
+  for (const definition of catalog.definitions) {
+    await expect(
+      row(definition.id).locator(".routine-explanation"),
+    ).not.toBeEmpty();
+    await expect(row(definition.id).locator(".routine-risk")).not.toBeEmpty();
+    await expect(
+      row(definition.id).getByRole("button", {
+        name: "Check routine",
+        exact: true,
+      }),
+    ).toBeVisible();
+    await expect(row(definition.id)).toContainText("Size unknown");
+  }
+  await page.evaluate(() => scrollTo(0, 0));
+  const visibleRows = await page
+    .locator(".routine-comparison-row")
+    .evaluateAll(
+      (rows) =>
+        rows.filter(
+          (row) =>
+            row.getBoundingClientRect().top >= 0 &&
+            row.getBoundingClientRect().bottom <= innerHeight,
+        ).length,
+    );
+  expect(visibleRows).toBeGreaterThanOrEqual(6);
+  expect(
+    await page
+      .locator(
+        ".routine-choice, .routine-explanation, .routine-risk, .routine-potential",
+      )
+      .evaluateAll((elements) =>
+        elements.every(
+          (element) => parseFloat(getComputedStyle(element).fontSize) >= 14,
+        ),
+      ),
+  ).toBe(true);
+  const audit = async () => {
+    const { violations } = await new AxeBuilder({ page }).analyze();
+    expect(
+      violations.filter((v) => ["serious", "critical"].includes(v.impact)),
+    ).toEqual([]);
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth > innerWidth,
+      ),
+    ).toBe(false);
+  };
+  const summaryInViewport = async () => {
+    const bounds = await page.locator(".routine-decision").boundingBox();
+    const navBottom = await page.locator(".sidebar").evaluate((element) =>
+      getComputedStyle(element).position === "sticky"
+        ? element.getBoundingClientRect().bottom
+        : 0,
+    );
+    const heading = await page.locator(".routine-detail > h2").boundingBox();
+    expect(heading.y).toBeGreaterThanOrEqual(navBottom);
+    expect(bounds.y).toBeGreaterThanOrEqual(navBottom);
+    expect(bounds.y + bounds.height).toBeLessThanOrEqual(
+      page.viewportSize().height,
+    );
+    await expect(page.locator(".routine-decision button")).toBeInViewport();
+  };
+  await audit();
+  await page.screenshot({
+    path: "review/routines-decision-collapsed-desktop.png",
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await audit();
+  await page.screenshot({
+    path: "review/routines-decision-collapsed-mobile.png",
+  });
+  await page.setViewportSize({ width: 1440, height: 1050 });
+  const batchStart = requests.length;
+  await page.getByRole("button", { name: "Run all", exact: true }).click();
+  await expect(page.locator(".routine-batch-progress")).toContainText(
+    "Routine checks settled",
+  );
+  expect(
+    requests
+      .slice(batchStart)
+      .every((request) => request.route === "/api/routines/run"),
+  ).toBe(true);
+  await expect(row("unreal-zen")).toContainText("≈ 109 GB recorded");
+  await expect(row("unreal-ddc")).toContainText("1 unknown size");
+  await expect(
+    row("nvidia-shaders").getByRole("button", {
+      name: "Try again",
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(row("nvidia-shaders")).toContainText(
+    "Fixture decision check failed",
+  );
+  await expect(row("windows-temporary")).toContainText(
+    "No matches under saved filters",
+  );
+  const browseStart = requests.length;
+  await choice("generated-output").focus();
+  await page.keyboard.press("Enter");
+  await summaryInViewport();
+  await expect(
+    page.locator(".routine-disclosures > details[open]"),
+  ).toHaveCount(0);
+  await expect(page.locator(".routine-folders-heading")).toContainText(
+    "1 eligible for review · 1 review only",
+  );
+  await expect(
+    page
+      .locator(".routine-candidate")
+      .filter({ hasText: "credentials and local configuration" }),
+  ).toContainText("Review only");
+  await expect(
+    page
+      .locator(".routine-candidate")
+      .filter({ hasText: "credentials and local configuration" })
+      .getByRole("button", { name: "Review cleanup", exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Review cleanup", exact: true }),
+  ).toHaveCount(1);
+  await audit();
+  await page.screenshot({
+    path: "review/routines-decision-actionable-desktop.png",
+  });
+  await row("generated-output")
+    .getByRole("button", { name: "Review folders", exact: true })
+    .click();
+  await expect(page.locator("#routine-folders")).toBeInViewport();
+  expect(requests.length).toBe(browseStart);
+  // Exact provenance, all diagnostics and the catalog boundary remain reachable.
+  await openEvidence();
+  await expect(page.locator("#routine-evidence")).toContainText(
+    "600,000,001 exact recorded bytes",
+  );
+  await expect(page.locator("#routine-evidence")).toContainText(completedAt);
+  await expect(page.locator("#routine-evidence")).toContainText(
+    catalog.definitions.find((item) => item.id === "generated-output").boundary,
+  );
+  await expect(page.locator("#routine-evidence")).toContainText(
+    "Fixture complete server notice",
+  );
+  await expect(page.locator("#routine-evidence")).toContainText(
+    "1 unknown size",
+  );
+  await page.setViewportSize({ width: 390, height: 844 });
+  await choice("generated-output").click();
+  await choice("generated-output").click();
+  await summaryInViewport();
+  await audit();
+  await page.screenshot({
+    path: "review/routines-decision-actionable-mobile.png",
+  });
+  for (const viewport of [
+    { width: 1440, height: 1050 },
+    { width: 390, height: 844 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await openRoutine("unreal-zen");
+    if (viewport.width === 390) {
+      await choice("unreal-zen").click();
+      await choice("unreal-zen").click();
+    }
+    await summaryInViewport();
+    await expect(page.locator(".routine-detail")).toContainText(
+      "Referenced cooked output may still be required",
+    );
+    await expect(page.locator(".routine-detail")).toContainText("Review only");
+    await expect(
+      page
+        .locator(".routine-detail")
+        .getByRole("button", { name: "Review cleanup", exact: true }),
+    ).toHaveCount(0);
+    await audit();
+    await page.screenshot({
+      path: `review/routines-decision-zen-${viewport.width === 390 ? "mobile" : "desktop"}.png`,
+    });
+  }
+  // The fixed navigation also applies between the narrow-card and phone
+  // breakpoints; selection must stay unobscured throughout that range.
+  await page.setViewportSize({ width: 600, height: 844 });
+  await choice("unreal-zen").click();
+  await choice("unreal-zen").click();
+  await summaryInViewport();
+  await audit();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await openEvidence();
+  await expect(page.locator("#routine-evidence")).toContainText(
+    "Fixture coverage evidence unavailable",
+  );
+  await expect(page.locator("#routine-evidence")).toContainText(
+    "109,000,000,000 exact recorded bytes",
+  );
+  // Double every computed text size to model browser text enlargement, including
+  // pixel-sized interface text. Preserve the original inline styles for cleanup.
+  await page.evaluate(() => {
+    const entries = [
+      ...document.querySelectorAll(
+        ".routines-workspace, .routines-workspace *",
+      ),
+    ].map((element) => ({
+      element,
+      size: getComputedStyle(element).fontSize,
+      old: element.getAttribute("style"),
+    }));
+    for (const { element, size, old } of entries) {
+      element.dataset.testOriginalStyle = old ?? "";
+      element.style.fontSize = `${parseFloat(size) * 2}px`;
+    }
+  });
+  await audit();
+  await page.evaluate(() =>
+    document
+      .querySelectorAll("[data-test-original-style]")
+      .forEach((element) => {
+        const old = element.dataset.testOriginalStyle;
+        if (old) element.setAttribute("style", old);
+        else element.removeAttribute("style");
+        delete element.dataset.testOriginalStyle;
+      }),
+  );
+  await page.setViewportSize({ width: 1440, height: 1050 });
+  await row("npm-cache")
+    .getByRole("button", { name: "View guidance", exact: true })
+    .click();
+  await expect(page.locator("#routine-guidance")).toHaveAttribute("open", "");
+  await expect(page.locator(".routine-command")).toContainText(
+    "Changes cache data",
+  );
+  await expect(page.locator(".routine-command")).toContainText(
+    "Validates cache entries and changes stored cache data.",
+  );
+  await expect(page.locator(".routine-command")).toContainText(commandScope);
+  await expect(page.locator(".routine-command")).toContainText("Optional");
+  await expect(
+    page.getByRole("button", { name: "Copy command", exact: true }),
+  ).toHaveCount(1);
+  await row("pip-cache")
+    .getByRole("button", { name: "Read guidance", exact: true })
+    .click();
+  await expect(page.locator("#routine-guidance")).toContainText(
+    "Documentation only",
+  );
+  await expect(
+    page.getByRole("button", { name: "Copy command", exact: true }),
+  ).toHaveCount(0);
+  await row("windows-temporary")
+    .getByRole("button", { name: "Review filters", exact: true })
+    .click();
+  await expect(page.locator("#routine-settings")).toHaveAttribute("open", "");
+  expect(requests.length).toBe(browseStart);
+  // A compact retry uses saved settings and never writes a preset.
+  await row("nvidia-shaders")
+    .getByRole("button", { name: "Try again", exact: true })
+    .click();
+  await expect(page.locator(".routine-detail .alert.error")).toContainText(
+    "Fixture decision check failed",
+  );
+  expect(requests.at(-1).route).toBe("/api/routines/run");
+  const { routineId, ...savedParameters } = catalog.presets["nvidia-shaders"];
+  expect(requests.at(-1).body.parameters).toEqual(savedParameters);
+  // Browse while an individual request is pending. A late failure belongs to
+  // its original row and cannot overwrite the newly selected form or error.
+  let release;
+  held = {
+    promise: new Promise((resolve) => {
+      release = resolve;
+    }),
+  };
+  failIndividual = true;
+  await openRoutine("generated-output");
+  await openSettings();
+  await page
+    .getByRole("button", { name: "Run routine check", exact: true })
+    .click();
+  await expect(
+    row("generated-output").getByRole("button", {
+      name: "Review folders",
+      exact: true,
+    }),
+  ).toBeVisible();
+  await openRoutine("engine-imports");
+  await openSettings();
+  await expect(page.getByLabel("Routine minimum size in MB")).toHaveValue(
+    String(catalog.presets["engine-imports"].minimumBytes / 1e6),
+  );
+  await expect(
+    page.getByRole("button", { name: "Save preset", exact: true }),
+  ).toBeDisabled();
+  release();
+  await expect(row("generated-output")).toContainText(
+    "Fixture decision check failed",
+  );
+  await expect(page.locator(".routine-detail .alert.error")).toHaveCount(0);
+  await expect(choice("engine-imports")).toHaveAttribute(
+    "aria-expanded",
+    "true",
+  );
+  await expect(page.getByLabel("Routine minimum size in MB")).toHaveValue(
+    String(catalog.presets["engine-imports"].minimumBytes / 1e6),
+  );
+  expect(
+    requests
+      .slice(batchStart)
+      .every((request) => request.route === "/api/routines/run"),
+  ).toBe(true);
+  fixtureRun = null;
+  fixtureCatalog = null;
+  await page.getByRole("button", { name: "Folders", exact: true }).click();
+  await page.getByRole("button", { name: "Routines", exact: true }).click();
+}
 await page.route("**/api/routines/run", async (route) => {
   const body = route.request().postDataJSON();
   if (fixtureRun) return fixtureRun(route, body);
@@ -161,7 +636,6 @@ async function verifyBatchWorkspace() {
     parameters: { minimumBytes: -1 },
     error: "Fixture saved size needs correction",
   };
-  const row = (id) => page.locator(`[data-routine-id='${id}']`);
   const runAll = page.getByRole("button", { name: "Run all", exact: true });
   const check = page.getByRole("button", {
     name: "Run routine check",
@@ -249,10 +723,32 @@ async function verifyBatchWorkspace() {
     });
   };
   fixtureRun = respond;
-  await row("generated-output").click();
+  await openRoutine("generated-output");
+  await openSettings();
   await page.getByLabel("Routine minimum size in MB").fill("501");
   await expect(runAll).toBeDisabled();
   const beforeRevert = requests.length;
+  await choice("npm-cache").click();
+  await expect(choice("generated-output")).toHaveAttribute(
+    "aria-expanded",
+    "true",
+  );
+  await expect(choice("npm-cache")).toHaveAttribute("aria-expanded", "false");
+  await expect(page.getByLabel("Routine minimum size in MB")).toHaveValue(
+    "501",
+  );
+  await expect(
+    row("npm-cache").getByRole("button", {
+      name: "Check routine",
+      exact: true,
+    }),
+  ).toBeDisabled();
+  await page.locator("#routine-settings > summary").click();
+  await expect(page.locator(".routine-dirty")).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Save preset", exact: true }),
+  ).toBeVisible();
+  expect(requests.length).toBe(beforeRevert);
   await page
     .getByRole("button", { name: "Use saved settings", exact: true })
     .click();
@@ -260,6 +756,7 @@ async function verifyBatchWorkspace() {
     "500",
   );
   expect(requests.length).toBe(beforeRevert);
+  await openSettings();
   const batchStart = requests.length;
   await runAll.click();
   await expect.poll(() => ids.includes("npm-cache")).toBe(true);
@@ -277,8 +774,9 @@ async function verifyBatchWorkspace() {
     "unreal-ddc",
   );
   const beforeBrowse = requests.length;
-  await row("unreal-ddc").click();
-  await row("generated-output").click();
+  await openRoutine("unreal-ddc");
+  await openRoutine("generated-output");
+  await openSettings();
   await expect(page.locator(".routine-candidate")).toHaveCount(1);
   await expect(prepare).toBeDisabled();
   await expect(check).toBeDisabled();
@@ -287,11 +785,14 @@ async function verifyBatchWorkspace() {
   ).toBeDisabled();
   await expect(runAll).toBeDisabled();
   expect(requests.length).toBe(beforeBrowse);
-  await row("generated-output").focus();
+  await choice("generated-output").focus();
   held.resolve();
   await expect(status).toContainText("Routine checks settled");
-  await expect(row("generated-output")).toBeFocused();
-  await expect(row("generated-output")).toHaveAttribute("aria-pressed", "true");
+  await expect(choice("generated-output")).toBeFocused();
+  await expect(choice("generated-output")).toHaveAttribute(
+    "aria-expanded",
+    "true",
+  );
   await expect(prepare).toBeEnabled();
   expect(ids).toEqual(
     catalog.definitions
@@ -330,20 +831,16 @@ async function verifyBatchWorkspace() {
   });
   await page.setViewportSize({ width: 390, height: 844 });
   await auditComparison();
-  await page
-    .getByRole("link", { name: "View selected routine ↓", exact: true })
-    .click();
-  await expect(page.locator("#routine-detail")).toBeFocused();
-  await page
-    .getByRole("link", { name: "↑ Back to comparison", exact: true })
-    .click();
-  await expect(page.locator("#routine-comparison")).toBeFocused();
+  await choice("generated-output").click();
+  await choice("generated-output").click();
+  await expect(page.locator(".routine-decision")).toBeInViewport();
   await page.evaluate(() => scrollTo(0, 0));
   await page.screenshot({
     path: "review/routines-comparison-mobile.png",
     fullPage: true,
   });
   await page.setViewportSize({ width: 1440, height: 1050 });
+  await openSettings();
   // An unexpired retained batch result reaches only the existing server-ID route.
   await prepare.click();
   await expect(
@@ -407,18 +904,16 @@ async function verifyBatchWorkspace() {
   await page.clock.fastForward(7 * 60 * 1000);
   held.resolve();
   await expect(status).toContainText("Routine checks settled");
-  await row("generated-output").click();
+  await openRoutine("generated-output");
   await expect(prepare).toBeDisabled();
   await expect(page.locator(".routine-detail")).toContainText(
     "Run again to review cleanup",
   );
-  await row("engine-imports").click();
+  await openRoutine("engine-imports");
   await expect(prepare).toBeEnabled();
-  await row("generated-output").click();
+  await openRoutine("generated-output");
   await expect(prepare).toBeDisabled();
-  await expect(row("generated-output")).toContainText(
-    "Run again to review cleanup",
-  );
+  await expect(row("generated-output")).toContainText("Evidence expired");
   expect(
     requests
       .slice(expiryStart)
@@ -455,7 +950,7 @@ async function verifyBatchWorkspace() {
   ).toBe(true);
   await expect(row("unreal-ddc")).toContainText("Size unknown");
   await expect(row("unreal-ddc")).not.toContainText("2 GB");
-  await row("unreal-ddc").click();
+  await openRoutine("unreal-ddc");
   await expect(page.locator(".routine-candidate-size").first()).toContainText(
     "Size unknown",
   );
@@ -482,6 +977,8 @@ async function verifyBatchWorkspace() {
   await page.getByRole("button", { name: "Folders", exact: true }).click();
   await page.getByRole("button", { name: "Routines", exact: true }).click();
   // Restore the strict 500 MB fixture for the independent deletion regression.
+  await openRoutine("generated-output");
+  await openSettings();
   await page.getByLabel("Routine minimum size in MB").fill("500");
   await page.getByRole("button", { name: "Save preset", exact: true }).click();
   await expect(
@@ -494,6 +991,10 @@ try {
     page.getByRole("button", { name: "Routines", exact: true }),
   ).toBeVisible();
   await page.getByRole("button", { name: "Routines", exact: true }).click();
+  await expect(page.locator(".routine-detail")).toHaveCount(0);
+  await row("generated-output")
+    .getByRole("button", { name: "Fix settings", exact: true })
+    .click();
   await expect(page.getByLabel("Routine minimum size in MB")).toHaveValue(
     "500",
   );
@@ -544,12 +1045,15 @@ try {
   ).toBeVisible();
   await page.reload();
   await page.getByRole("button", { name: "Routines", exact: true }).click();
+  await openRoutine("generated-output");
+  await openSettings();
   await expect(page.getByLabel("Routine minimum size in MB")).toHaveValue(
     "500",
   );
   await page
     .getByRole("button", { name: /npm content-cache maintenance/ })
     .click();
+  await openSettings();
   await page
     .getByRole("button", { name: "Run routine check", exact: true })
     .click();
@@ -571,14 +1075,15 @@ try {
     "parent-container bytes are not substituted",
   );
   await expect(page.getByText(/Partial coverage ·/)).toBeVisible();
+  await openEvidence();
   await expect(page.getByText(/Quick scan reused dated totals/)).toBeVisible();
   await expect(
     page.getByText(/Unknown-size leads have not met the threshold/),
   ).toBeVisible();
   await estimatedCandidate
-    .getByText(/Maintenance guidance · documentation only/)
+    .getByRole("button", { name: "Read guidance", exact: true })
     .click();
-  await expect(estimatedCandidate.locator(".routine-guide")).toContainText(
+  await expect(page.locator("#routine-guidance")).toContainText(
     "npm cache verify is mutating",
   );
   await expect(
@@ -616,6 +1121,7 @@ try {
   await audit();
   await page.screenshot({ path: "review/routines-mobile.png", fullPage: true });
   await page.setViewportSize({ width: 1440, height: 1050 });
+  await verifyDecisionWorkspace();
   await verifyBatchWorkspace();
   // The legacy caller still prepares through its original route.
   await page.getByRole("button", { name: "Folders", exact: true }).click();
@@ -631,6 +1137,8 @@ try {
   expect(requests.at(-1).route).toBe("/api/cleanup/prepare");
   await page.getByRole("button", { name: "Cancel", exact: true }).click();
   await page.getByRole("button", { name: "Routines", exact: true }).click();
+  await openRoutine("generated-output");
+  await openSettings();
   await page
     .getByRole("button", { name: "Run routine check", exact: true })
     .click();
@@ -673,7 +1181,7 @@ try {
   expect(errors).toEqual([]);
   expect(unintercepted).toEqual([]);
   console.log(
-    "Routines Chromium passed: folder-only navigation, preset correction/normalization, sequential saved-preset comparison, progressive sorting and retained selection, failure/invalid/stop/refresh guards, seven-minute independent expiry, report/navigation disposal, unknown sample sizes, zero batch writes/preparation/measurement/scans/reveal, legacy/ID-based confirmation and disposable deletion, desktop/mobile layout, jump links, focus and accessibility.",
+    "Routines Chromium passed: fourteen concise decisions, six-row desktop density, inline desktop/mobile summary, mixed restrictions, qualified/documentation-only guidance, retained provenance/disclosures, dirty navigation/compact-check guards, pending individual-check browsing, saved-preset sequential comparison, sorting/focus, failure/invalid/stop/refresh guards, seven-minute independent expiry, report/navigation disposal, unknown sample sizes, zero implicit writes/preparation/execution, legacy/ID-based confirmation and disposable deletion, 200% text, overflow and accessibility.",
   );
 } finally {
   await browser.close();
