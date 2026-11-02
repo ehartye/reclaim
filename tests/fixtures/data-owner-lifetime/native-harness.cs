@@ -8,12 +8,13 @@ using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.Web.Script.Serialization;
 
-public static class OwnerLifetimeHarness {
+public static partial class OwnerLifetimeHarness {
   static JavaScriptSerializer json = new JavaScriptSerializer();
   static string root, mode, role;
   static long stopAt;
   static string stopCause;
   static bool deadlineMissed, internalFailure, stopTimestampUncertain;
+  static bool expectedLeaseHelperExit;
   static bool cancelRequired, terminateRequired, diagnosticFailure;
   static int cancelAttempts, terminationAttempts, terminationSuccesses;
   static string lastTerminationError, lastCancellationError;
@@ -128,7 +129,7 @@ public static class OwnerLifetimeHarness {
     bool requested=false;try{using(var e=Barrier("observer-cancel"))requested=e.WaitOne(0);}catch(WaitHandleCannotBeOpenedException){}
     // A notification without valid durable evidence cannot establish its start.
     if(requested&&stopAt==0&&!stopTimestampUncertain)UncertainStop(root,"Cancellation notification has no committed native timestamp");
-    foreach(var c in children) { uint w=WaitForSingleObject(c.handle,0);Check(w==0||w==258,"Wait retained original handle");if(w==0&&!c.observed){long exitedAt=Now();c.observed=true;Check(GetExitCodeProcess(c.handle,out c.code),"Exit status");Stop("actor-exit:"+c.role,exitedAt);Event("original-exit-observed","actor",c.role,"pid",c.pid,"creation",c.creation,"exitCode",c.code);if(c.code!=0&&!(mode=="helper-loss"&&c.role=="helper"&&c.code==77))internalFailure=true;} }
+    foreach(var c in children) { uint w=WaitForSingleObject(c.handle,0);Check(w==0||w==258,"Wait retained original handle");if(w==0&&!c.observed){long exitedAt=Now();c.observed=true;Check(GetExitCodeProcess(c.handle,out c.code),"Exit status");Stop("actor-exit:"+c.role,exitedAt);Event("original-exit-observed","actor",c.role,"pid",c.pid,"creation",c.creation,"exitCode",c.code);if(c.code!=0&&!((mode=="helper-loss"||expectedLeaseHelperExit)&&c.role=="helper"&&c.code==77))internalFailure=true;} }
     ReadDurableStops(started,Now()); // A request may have committed during exit observation.
     if(now-started>=60*frequency){Stop("operation-budget",started+60*frequency);internalFailure=true;}
     if(!stopTimestampUncertain&&stopAt!=0&&now-stopAt>=5*frequency&&!deadlineMissed&&Active()!=0) {
