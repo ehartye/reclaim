@@ -1,6 +1,6 @@
 import { X } from "lucide-react";
 import { Dialog } from "./Dialog";
-import { bytes } from "../types";
+
 import type { Scan } from "../types";
 import { presentScanCoverage } from "../scan-coverage";
 function Paths({ entries }: { entries: Scan["skipped"] }) {
@@ -117,9 +117,8 @@ export function CoverageDialog({
             {scan.completedAt || scan.startedAt}.
           </p>
           <p>
-            {scan.folderSizing
-              ? "Folder totals scan; no full-scan file cap. Exclusions and link/cloud/system protections apply."
-              : `${scan.options.maxFiles.toLocaleString()} files maximum · ${bytes(scan.options.minimumBytes)} minimum finding · ${scan.options.staleDays} days old · duplicate checks ${scan.options.duplicates ? "on" : "off"}`}
+            Folder totals scan; no file or directory cap. Exclusions and
+            link/cloud/system protections apply.
           </p>
           {coverage.notices.map((notice, index) => (
             <p key={index}>{notice}</p>

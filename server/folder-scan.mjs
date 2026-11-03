@@ -187,7 +187,6 @@ export async function scanFolderSizes(
     ...input,
     root: path.resolve(input.root),
     operation: "folder-sizes",
-    duplicates: false,
     folderScanMode: input.folderScanMode || "quick",
     folderMinBytes: input.folderMinBytes ?? 500000000,
     exclusions: (input.exclusions || []).map((e) =>
@@ -233,13 +232,9 @@ export async function scanFolderSizes(
     completedAt: "",
     durationMs: 0,
     totalBytes: 0,
-    opportunityBytes: 0,
     fileCount: 0,
     directoryCount: 0,
-    files: [],
     directories: [],
-    findings: [],
-    duplicateGroups: [],
     skipped: [],
     errors: [],
     notices: [

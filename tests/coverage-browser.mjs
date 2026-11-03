@@ -4,14 +4,19 @@ import { mkdtemp, mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { createApp } from "../server/app.mjs";
-import { sample } from "../src/sample.ts";
+
 const temp = await mkdtemp(path.join(tmpdir(), "reclaim-coverage-ui-"));
 const app = await createApp({ dataDir: temp });
 await new Promise((resolve) => app.server.listen(0, "127.0.0.1", resolve));
 const origin = `http://127.0.0.1:${app.server.address().port}`;
 const state = await (await fetch(origin + "/api/state")).json();
 const fixture = {
-  ...structuredClone(sample),
+  name: "Coverage fixture",
+  totalBytes: 0,
+  startedAt: "2026-01-01T00:00:00Z",
+  completedAt: "2026-01-01T00:01:00Z",
+  durationMs: 60000,
+  options: { operation: "folder-sizes" },
   id: "coverage-fixture",
   root: "C:\\",
   status: "partial",
@@ -34,6 +39,7 @@ const fixture = {
   ],
   notices: ["Folder cache could not be saved: Invalid string length"],
   folderSizing: {
+    accountingVersion: 2,
     minimumBytes: 500000000,
     basis: "logical-file-entries",
     scopeComplete: false,

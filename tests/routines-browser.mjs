@@ -34,16 +34,12 @@ const report = {
   completedAt,
   durationMs: 1,
   totalBytes: 1800000000,
-  opportunityBytes: 0,
   fileCount: 3,
   directoryCount: 4,
-  files: [],
-  findings: [],
-  duplicateGroups: [],
   skipped: [],
   errors: [],
   notices: [],
-  options: { exclusions: [], skipCloud: true },
+  options: { operation: "folder-sizes", exclusions: [], skipCloud: true },
   directories: [
     { path: root, bytes: 1800000000, fileCount: 3, complete: true },
     { path: dist, bytes: 600000001, fileCount: 1, complete: true },
@@ -74,13 +70,9 @@ await writeFile(
     scans: [
       {
         ...report,
-        files: undefined,
-        findings: undefined,
         directories: undefined,
-        findingCount: 0,
       },
     ],
-    reviews: {},
     cleanups: [],
     routines: {
       schemaVersion: 1,
@@ -355,11 +347,13 @@ async function verifyDecisionWorkspace() {
   };
   const summaryInViewport = async () => {
     const bounds = await page.locator(".routine-decision").boundingBox();
-    const navBottom = await page.locator(".sidebar").evaluate((element) =>
-      getComputedStyle(element).position === "sticky"
-        ? element.getBoundingClientRect().bottom
-        : 0,
-    );
+    const navBottom = await page
+      .locator(".sidebar")
+      .evaluate((element) =>
+        getComputedStyle(element).position === "sticky"
+          ? element.getBoundingClientRect().bottom
+          : 0,
+      );
     const heading = await page.locator(".routine-detail > h2").boundingBox();
     expect(heading.y).toBeGreaterThanOrEqual(navBottom);
     expect(bounds.y).toBeGreaterThanOrEqual(navBottom);
@@ -919,16 +913,17 @@ async function verifyBatchWorkspace() {
       .slice(expiryStart)
       .every((request) => request.route === "/api/routines/run"),
   ).toBe(true);
-  // Navigation disposes the queue; an obsolete response cannot resume it.
+  // Navigation and inventory removal dispose the queue; obsolete responses cannot resume it.
   ids = [];
   held = deferred();
   heldId = "unreal-ddc";
   await runAll.click();
   await expect.poll(() => ids.length).toBe(1);
   await page.getByRole("button", { name: "History", exact: true }).click();
-  await page
-    .getByRole("button", { name: "Explore sample", exact: true })
-    .click();
+  const savedScans = app.state.scans;
+  app.state.scans = [];
+  await page.waitForResponse((r) => r.url().endsWith("/api/state"));
+  await expect(page.getByText("A fresh start", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Routines", exact: true }).click();
   await expect(status).toContainText("Ready to check routines");
   held.resolve();
@@ -937,12 +932,12 @@ async function verifyBatchWorkspace() {
   await expect(page.getByText(/No real report selected/)).toBeVisible();
   ids = [];
   heldId = "";
-  const sampleStart = requests.length;
+  const emptyStart = requests.length;
   await runAll.click();
   await expect(status).toContainText("Routine checks settled");
   expect(
     requests
-      .slice(sampleStart)
+      .slice(emptyStart)
       .every(
         (request) =>
           request.route === "/api/routines/run" && !("scanId" in request.body),
@@ -957,13 +952,15 @@ async function verifyBatchWorkspace() {
   await expect(page.locator(".routine-candidate-size").first()).toContainText(
     "No recorded size date",
   );
-  // A report change during another pending sample check also suppresses callbacks.
+  // A report change during another pending report-free check also suppresses callbacks.
   ids = [];
   held = deferred();
   heldId = "unreal-ddc";
   await runAll.click();
   await expect.poll(() => ids.length).toBe(1);
   await page.getByRole("button", { name: "History", exact: true }).click();
+  app.state.scans = savedScans;
+  await expect(page.locator(".history-row")).toHaveCount(1);
   await page.locator(".history-row").first().click();
   await page.getByRole("button", { name: "Routines", exact: true }).click();
   await expect(status).toContainText("Ready to check routines");
@@ -1123,7 +1120,7 @@ try {
   await page.setViewportSize({ width: 1440, height: 1050 });
   await verifyDecisionWorkspace();
   await verifyBatchWorkspace();
-  // The legacy caller still prepares through its original route.
+  // Saved-directory preparation remains independent from routine server IDs.
   await page.getByRole("button", { name: "Folders", exact: true }).click();
   await page
     .getByLabel("Folder category", { exact: true })
@@ -1181,7 +1178,7 @@ try {
   expect(errors).toEqual([]);
   expect(unintercepted).toEqual([]);
   console.log(
-    "Routines Chromium passed: fourteen concise decisions, six-row desktop density, inline desktop/mobile summary, mixed restrictions, qualified/documentation-only guidance, retained provenance/disclosures, dirty navigation/compact-check guards, pending individual-check browsing, saved-preset sequential comparison, sorting/focus, failure/invalid/stop/refresh guards, seven-minute independent expiry, report/navigation disposal, unknown sample sizes, zero implicit writes/preparation/execution, legacy/ID-based confirmation and disposable deletion, 200% text, overflow and accessibility.",
+    "Routines Chromium passed: fourteen concise decisions, six-row desktop density, inline desktop/mobile summary, mixed restrictions, qualified/documentation-only guidance, retained provenance/disclosures, dirty navigation/compact-check guards, pending individual-check browsing, saved-preset sequential comparison, sorting/focus, failure/invalid/stop/refresh guards, seven-minute independent expiry, report/navigation disposal, unknown sizes without a report, zero implicit writes/preparation/execution, directory/ID-based confirmation and disposable deletion, 200% text, overflow and accessibility.",
   );
 } finally {
   await browser.close();

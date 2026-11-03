@@ -4,24 +4,6 @@ export type FileEntry = {
   mtimeMs: number;
   nlink?: number;
 };
-export type Finding = {
-  insight?: { reason: string; restore: string; projectPath?: string };
-  id: string;
-  category: string;
-  title: string;
-  path: string;
-  bytes: number;
-  filePaths: string[];
-  fileCount: number;
-  risk: "low" | "review";
-  reason: string;
-  impact: string;
-  action: string;
-  evidence: string[];
-  confidence: string;
-  score: number;
-  modifiedAt: number;
-};
 export type Directory = {
   path: string;
   bytes: number;
@@ -60,7 +42,8 @@ export type IgnoredFolderResult = {
   notices: string[];
 };
 export type Scan = {
-  folderSizing?: {
+  folderSizing: {
+    accountingVersion: 2;
     minimumBytes: number;
     basis: "logical-file-entries";
     scopeComplete: boolean;
@@ -79,19 +62,10 @@ export type Scan = {
   startedAt: string;
   completedAt: string;
   totalBytes: number;
-  opportunityBytes: number;
   fileCount: number;
   directoryCount: number;
   durationMs: number;
-  findings: Finding[];
-  files: FileEntry[];
   directories: Directory[];
-  duplicateGroups: {
-    id: string;
-    hash: string;
-    files: FileEntry[];
-    bytes: number;
-  }[];
   skipped: { path: string; reason: string }[];
   errors: { path: string; reason: string }[];
   notices: string[];
@@ -111,25 +85,15 @@ export type ScanSummary = Pick<
   | "startedAt"
   | "completedAt"
   | "totalBytes"
-  | "opportunityBytes"
   | "fileCount"
   | "durationMs"
-> & { findingCount: number; coverageKey?: string; operation?: string };
+> & { coverageKey?: string; operation: "folder-sizes" };
 export type Settings = {
-  opportunityAgeDays: number;
-  opportunityMinBytes: number;
   developmentRoots: string[];
-  minimumBytes: number;
-  largeFileBytes: number;
-  staleDays: number;
-  duplicates: boolean;
-  duplicateMinBytes: number;
-  hashBudgetBytes: number;
-  maxFiles: number;
   exclusions: string[];
   skipCloud: boolean;
+  folderMinBytes?: number;
 };
-export type { Review } from "../shared/review.ts";
 export type {
   RoutineDefinition,
   RoutinePreset,
@@ -162,16 +126,13 @@ export type RoutineCatalog = {
   presets: Record<string, import("../shared/routines.ts").RoutinePreset>;
   invalidPresets: import("../shared/routines.ts").RoutinePresetState["invalidPresets"];
 };
-import type { Review } from "../shared/review.ts";
 export type State = {
   routines?: import("../shared/routines.ts").RoutinePresetState;
-  measurementJob?: MeasurementJob | null;
   cleanupBusy: boolean;
   cleanups: CleanupRecord[];
   token: string;
   settings: Settings;
   scans: ScanSummary[];
-  reviews: Record<string, Review>;
   locations: { label: string; path: string }[];
   job: {
     id: string;
@@ -184,62 +145,6 @@ export type State = {
     };
   } | null;
   lastError?: string;
-};
-export type DevelopmentTarget = {
-  recorded?: import("../shared/opportunities.ts").RecordedOpportunity;
-  blockedReason?: string;
-  activity?: import("../shared/opportunities.ts").ActivityHint;
-  category: "builds" | "dependencies" | "caches" | "worktrees";
-  cleanupSupported: boolean;
-  id: string;
-  path: string;
-  kind: "generated" | "worktree";
-  label: string;
-  projectPath: string;
-  restore: string;
-  reason: string;
-  branch?: string;
-  lastCommitAt?: string;
-  locked?: boolean;
-};
-export type MeasurementJob = {
-  id: string;
-  total: number;
-  done: number;
-  path: string;
-  progress: { fileCount?: number; logicalBytes?: number } | null;
-};
-export type IntelligenceSnapshot = {
-  changes?: { path: string; changedAt: number }[];
-  index: {
-    status: string;
-    progress: { done: number; total: number; current?: string };
-    records: Record<
-      string,
-      import("../shared/opportunities.ts").RecordedOpportunity
-    >;
-    error?: string;
-  };
-  measurements: Record<
-    string,
-    import("../shared/opportunities.ts").FolderMeasurement
-  >;
-  measurementJob: MeasurementJob | null;
-  measurementError?: string;
-};
-export type DevelopmentInventory = {
-  source?: "saved";
-  roots: string[];
-  operation: string;
-  coverage: {
-    directoriesVisited: number;
-    skippedSubtrees: number;
-    complete: boolean;
-    directoryLimit: number;
-  };
-  targets: DevelopmentTarget[];
-  projects: { path: string }[];
-  notices: string[];
 };
 export type CleanupPreview = {
   id: string;
@@ -265,14 +170,6 @@ export type CleanupRecord = {
   startedAt: string;
   completedAt?: string;
   error?: string;
-};
-export const categories: Record<string, { label: string; color: string }> = {
-  dependencies: { label: "Dependencies", color: "#4678de" },
-  builds: { label: "Build output", color: "#739bea" },
-  caches: { label: "Caches", color: "#279b94" },
-  duplicates: { label: "Duplicates", color: "#8b78bc" },
-  installers: { label: "Installers & archives", color: "#d8a155" },
-  large: { label: "Large & older", color: "#a5b3c5" },
 };
 export const bytes = (n: number) => {
   if (!n) return "0 B";
@@ -311,24 +208,3 @@ export const date = (s: string) =>
     hour: "numeric",
     minute: "2-digit",
   });
-export const queueBytes = (s: Scan, ids: string[]) => {
-  const wanted = new Set(ids);
-  const paths = new Set(
-    s.findings.filter((f) => wanted.has(f.id)).flatMap((f) => f.filePaths),
-  );
-  return s.files.reduce((n, f) => n + (paths.has(f.path) ? f.size : 0), 0);
-};
-export function categorySizes(
-  s: Pick<Scan, "files">,
-  findings: Pick<Finding, "category" | "filePaths">[],
-) {
-  const owner = new Map<string, string>();
-  for (const f of findings)
-    for (const p of f.filePaths) if (!owner.has(p)) owner.set(p, f.category);
-  const sizes: Record<string, number> = {};
-  for (const f of s.files) {
-    const category = owner.get(f.path);
-    if (category) sizes[category] = (sizes[category] || 0) + f.size;
-  }
-  return sizes;
-}

@@ -316,42 +316,12 @@ try {
     .click();
   await expect(
     page.getByLabel("Maximum files per legacy full scan", { exact: true }),
-  ).toBeVisible();
+  ).toHaveCount(0);
   await expect(
     page
       .locator(".settings-note")
       .filter({ hasText: "Windows system folders" }),
   ).toContainText("Folder totals scans have no file or directory cap");
-  // Startup prefers the newest folder report even when a legacy full report is newer.
-  const base = `http://127.0.0.1:${app.server.address().port}`;
-  const apiState = await fetch(base + "/api/state").then((r) => r.json());
-  const fullResponse = await fetch(base + "/api/scans", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Reclaim-Token": apiState.token,
-    },
-    body: JSON.stringify({ root, operation: "full", duplicates: false }),
-  });
-  expect(fullResponse.ok).toBe(true);
-  await expect.poll(() => app.state.scans.length, { timeout: 15000 }).toBe(5);
-  expect(app.state.scans[0].operation).not.toBe("folder-sizes");
-  await page.reload();
-  await expect(
-    page.getByRole("heading", { name: "Folders", exact: true }),
-  ).toBeVisible();
-  await expect(page.locator(".folder-scope code")).toHaveText(modulesRoot);
-  // Two subsequent state polls must not switch back to the globally newest legacy report.
-  await page.waitForResponse((r) => r.url().endsWith("/api/state"));
-  await page.waitForResponse((r) => r.url().endsWith("/api/state"));
-  await expect(
-    page.getByRole("heading", { name: "Folders", exact: true }),
-  ).toBeVisible();
-  await page.getByRole("button", { name: "History", exact: true }).click();
-  await page.locator(".history-row").first().click();
-  await expect(
-    page.getByRole("heading", { name: "Your space, explained.", exact: true }),
-  ).toBeVisible();
   expect(errors).toEqual([]);
   console.log(
     "Folder tree Chromium passed: hierarchy, pruning, filters, on-demand files, quick/fresh, history, desktop/mobile accessibility; no desktop launch.",

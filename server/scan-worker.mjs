@@ -60,10 +60,8 @@ try {
     startedAt: result.startedAt,
     completedAt: result.completedAt,
     totalBytes: result.totalBytes,
-    opportunityBytes: result.opportunityBytes,
     fileCount: result.fileCount,
     durationMs: result.durationMs,
-    findingCount: result.findings.length,
     coverageKey: createHash("sha256")
       .update(
         JSON.stringify({

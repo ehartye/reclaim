@@ -37,8 +37,43 @@ Removed scanner/settings keys: `minimumBytes`, `largeFileBytes`, `staleDays`, `d
 
 The first TDD run of `current-only-api.test.mjs` failed all four cases against the baseline: retired endpoint returned 200, omitted operation produced full scan, legacy payload was accepted, and explicit full scanner dispatch did not reject. A second red run caught mixed legacy preparation fields and invalid full operations during active scans; both now return 400.
 
-## Temporary frontend compatibility boundary
+## WP1 temporary frontend compatibility boundary (closed by WP2)
 
-WP2 owns the remaining legacy frontend modules and their shared declarations (`shared/opportunities.ts`, review/metrics helpers, and legacy types in `src/types.ts`). WP1 leaves these in place only for compile-time/frontend import closure. Folder reports still carry empty legacy arrays and zero counters until those consumers are removed. The production backend has no imports of the retired opportunity, review, ranking or full-file modules. WP2 must close and remove these remaining consumers, assets and browser workflows before delivery.
+WP2 owns the remaining legacy frontend modules and their shared declarations (`shared/opportunities.ts`, review/metrics helpers, and legacy types in `src/types.ts`). WP1 leaves these in place only for compile-time/frontend import closure. Folder reports still carry empty legacy arrays and zero counters until those consumers are removed. The production backend has no imports of the retired opportunity, review, ranking or full-file modules. WP2 closes these consumers and removes the compatibility payload fields, as recorded below.
 
 WP1 verification: `npm run build` passed; `npm test` passed 142 tests with one pre-existing private qualification test skipped (143 total). Native fixture qualification verdicts remain Partial/Invalidated as designed; this change grants no new cleanup authority.
+
+## WP2 — current-only interface
+
+The application shell has stable Folders, Routines, History and Settings navigation. Workspace and report requests have separate explicit loading/failure states; no report is fabricated while either request is pending. Settings remain unavailable until their real values load. Report responses cannot change the active page, and request generations prevent obsolete responses replacing a newer selection. An unavailable report is attempted once automatically and can be retried explicitly; ordinary state polling does not create a report retry loop. Empty installations retain New scan, Settings and all fourteen routines without implicit scans, preset saves, preparation or execution.
+
+| Removed artifact | Former consumers | Retained replacement |
+| --- | --- | --- |
+| `src/sample.ts` | Initial shell state, History demo entry, coverage fixture | Explicit loading/empty states; disposable folder fixture |
+| `src/components/Development.tsx`, `OpportunityPlanner.tsx` | Standalone Development and planner | Existing fourteen Routines |
+| `src/components/OpportunityTable.tsx`, `FindingDrawer.tsx` | Overview, Opportunities, Review queue and finding details | Folder tree, inspection, ignored-folder checks and separately confirmed cleanup |
+| `src/Treemap.tsx` | Space map | Existing hierarchical folder tree |
+| `shared/review.ts`, `shared/opportunities.ts` | Retired dispositions, planning and finding UI | Current routine contracts and the WP1 cleanup-change helper |
+| Legacy `src/types.ts` declarations/helpers | Findings, reviews, development inventory, measurements, ranking, categories and duplicate groups | Folder report/settings/state and routine contracts |
+| Empty `files`, `findings`, `duplicateGroups`, `opportunityBytes` report fields; `findingCount` summary | Temporary WP1 frontend compatibility | No compatibility payload fields in new reports |
+| Retired CSS selectors | Deleted components and shell screens | Retained layout/dialog/routine/tree selectors; production CSS reduced from 61.20 kB to 33.16 kB |
+
+No exclusive sample asset existed besides its source module. The application icon remains. Historical `findingId` metadata in the cleanup-audit type is not a preparation path or renderer; canonical audit records are preserved.
+
+History lists folder summaries only, preserves same-coverage comparisons, and opens reports through the current report boundary. JSON/CSV downloads check HTTP success before creating a download; missing or unsupported exports surface a recoverable message. Settings retain exclusions, cloud policy and project roots. Removed scanner thresholds, duplicate settings and full-scan limits no longer appear.
+
+### Browser and fixture replacement
+
+- `startup-browser.mjs` adds eight cases: separately delayed state/report, navigation during report loading, empty inventory, failed state/report, missing report and unsupported format. A MutationObserver records startup navigation; checks cover focus, zero implicit POST requests, mobile overflow and serious/critical axe findings. The seven original cases failed against the baseline because explicit states/recoverable alerts were absent. The navigation race case guards the new shell's retained-page behavior.
+- `browser.mjs` replaces sample/finding/map/disposition flows with current folder scanning, reveal acknowledgement and failure, JSON/CSV downloads, failed export recovery, exclusions and comparable History rows. Shared settings, history, keyboard and accessibility assertions remain.
+- `cleanup-browser.mjs` moves development preparation to saved-directory preparation. Configured roots, cancellation, wrong/exact typed confirmation, real disposable deletion, audit persistence, snapshot warning and desktop/mobile axe checks remain.
+- `routines-browser.mjs` replaces sample switching with empty-inventory removal/restoration. Navigation/report disposal, unknown sizes without a report, all fourteen decisions, sequential Run all, stop, independent expiry, server-ID preparation and disposable deletion remain.
+- `folder-browser.mjs` removes legacy scan/History compatibility expectations and verifies retired settings are absent. Tree paging, inspection, cache/fresh scans, cleanup preview, snapshot invalidation and current History remain.
+- `coverage-browser.mjs` uses a current folder fixture instead of importing production sample data; collapsed 1,000-entry coverage, keyboard, zero writes and axe assertions remain.
+- Removed `opportunity-browser.mjs` and `review.test.mjs` cover only deleted planner/disposition features. `metrics.test.mjs` retains root parenting and conservative History comparison; its exclusive finding-category partition test is removed.
+- Folder API/scanner tests now assert legacy report arrays are absent rather than empty.
+
+Visual review uses the established navy rail, blue actions, Aptos/Segoe UI text and monospace paths. The folder hierarchy and routine decision table remain the main visual structures. Actual 1440×1050 and 390×844 loading, empty, folder-report and routine screenshots were opened and inspected; controls remain readable and contained. Screenshots and disposable-fixture logs are gitignored under `review/` and contain no live report data.
+
+WP2 verification: production build passed; Node suite passed 138 tests with one existing skip (139 total); all seven scripts in `npm run test:ui` passed. No serious/critical axe findings, browser errors or horizontal overflow were found in the exercised views.
+
