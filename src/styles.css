@@ -4319,3 +4319,12 @@ dialog::backdrop {
     width: 100%;
   }
 }
+
+.coverage-summary { flex-wrap: wrap; font-size: 14px; }
+.coverage-decision p, .coverage-decision .coverage-item small { font-size: 14px; line-height: 1.5; }
+.coverage-decision .coverage-item code { font-size: 13px; }
+.coverage-decision .coverage-lead { margin-top: 0; color: var(--ink); font-weight: 600; }
+.coverage-group { border-top: 1px solid var(--line); padding: 14px 0; }
+.coverage-group summary { cursor: pointer; font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
+.coverage-group summary:focus-visible { outline: 2px solid var(--blue); outline-offset: 4px; }
+.coverage-group summary span { font-weight: 400; }
