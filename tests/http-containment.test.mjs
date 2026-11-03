@@ -285,11 +285,11 @@ test("auth controls, JSON shape, UTF-8 body limits and aborted bodies retain bou
   ]);
   jsonResponse(await post(invalidUtf8), 400, "INVALID_REQUEST");
   await post(
-    '{"staleDays":321}',
+    '{"folderMinBytes":321}',
     { "Content-Length": 100 },
     { incomplete: true },
   );
-  assert.notEqual((await f.state()).settings.staleDays, 321);
+  assert.notEqual((await f.state()).settings.folderMinBytes, 321);
 });
 
 test("serialization and failures around disconnected, sent and ended responses stay inside the child", async (t) => {
@@ -379,7 +379,7 @@ test("production timeout values are explicit; native header and body receipt dea
   const initial = await f.state();
   const body = await stalledRequest(
     f.port,
-    `POST /api/settings HTTP/1.1\r\nHost: 127.0.0.1:${f.port}\r\nContent-Type: application/json\r\nX-Reclaim-Token: ${initial.token}\r\nContent-Length: 100\r\n\r\n{"staleDays":321}`,
+    `POST /api/settings HTTP/1.1\r\nHost: 127.0.0.1:${f.port}\r\nContent-Type: application/json\r\nX-Reclaim-Token: ${initial.token}\r\nContent-Length: 100\r\n\r\n{"folderMinBytes":321}`,
   );
   assert.match(body.response, /^HTTP\/1\.1 408 /);
   assert.ok(body.response.length < 1600);
@@ -387,7 +387,7 @@ test("production timeout values are explicit; native header and body receipt dea
     body.elapsed >= 300 && body.elapsed < 2000,
     `body elapsed ${body.elapsed}`,
   );
-  assert.notEqual((await f.state()).settings.staleDays, 321);
+  assert.notEqual((await f.state()).settings.folderMinBytes, 321);
 });
 
 test("a received deferred application operation completes beyond the receipt deadline", async (t) => {

@@ -9,7 +9,7 @@ import {
   parseWorktrees,
   within,
   normalizeRoots,
-} from "./development.mjs";
+} from "./project-discovery.mjs";
 import {
   getRoutineDefinition,
   routineMode,

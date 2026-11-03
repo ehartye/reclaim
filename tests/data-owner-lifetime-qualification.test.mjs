@@ -138,7 +138,7 @@ test('WP1 observes sequential state loss and actual helper-loss authority overla
           assert.equal(processResult.exitCode, 0); assert.equal(supervisor.completed, true); assert.equal(supervisor.deadlineMissed, false);
           const afterA = await optional(path.join(fixture, 'after-A.json')), afterB = await optional(path.join(fixture, 'after-B.json'));
           assert.deepEqual(afterA.settings.exclusions, ['owner-A-preserve-this']);
-          assert.deepEqual(afterB.settings.exclusions, []); assert.equal(afterB.settings.staleDays, 123);
+          assert.deepEqual(afterB.settings.exclusions, []); assert.equal(afterB.settings.folderMinBytes, 123);
           const result = await optional(path.join(fixture, 'sequential-result.json'));
           assert.equal(new Set(result.ports).size, 2); assert(result.ports.every(p => p > 0 && p !== 4318));
         } else {

@@ -1,7 +1,7 @@
 import { lstat, realpath } from "node:fs/promises";
 import path from "node:path";
 import { spawn } from "node:child_process";
-import { describeGenerated, git, within } from "./development.mjs";
+import { describeGenerated, git, within } from "./project-discovery.mjs";
 
 // Ask Git rather than interpreting .gitignore patterns ourselves. NUL fields
 // preserve spaces, tabs, newlines and non-ASCII paths and ignore patterns.

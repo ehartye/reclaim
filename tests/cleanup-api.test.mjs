@@ -11,7 +11,7 @@ import {
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { createApp } from "../server/app.mjs";
-test("configured development roots, known targets and confirmed deletion persist through HTTP and restart", async (t) => {
+test("configured development roots, saved folder targets and confirmed deletion persist through HTTP and restart", async (t) => {
   const dir = await mkdtemp(path.join(tmpdir(), "reclaim-cleanup-api-"));
   t.after(() => rm(dir, { recursive: true, force: true }));
   const root = path.join(dir, "projects"),
@@ -47,23 +47,27 @@ test("configured development roots, known targets and confirmed deletion persist
     (await send("settings", { developmentRoots: ["relative"] })).status,
     400,
   );
-  const inventory = await fetch(base + "/api/development").then((r) =>
-    r.json(),
-  );
-  assert(inventory.targets.some((t) => t.path === target));
+  await send("scans", { root, folderMinBytes: 0 });
+  for (let i = 0; i < 200; i++) {
+    const current = await fetch(base + "/api/state").then((r) => r.json());
+    if (!current.job && current.scans.length) break;
+    await new Promise((r) => setTimeout(r, 25));
+  }
+  const scanId = app.state.scans[0].id;
   assert.equal((await send("cleanup/prepare", { path: target })).status, 400);
   assert.equal(
     (
       await send(
         "cleanup/prepare",
-        { targetId: inventory.targets[0].id },
+        { scanId, directoryPath: target },
         { Origin: "https://foreign.invalid" },
       )
     ).status,
     403,
   );
   r = await send("cleanup/prepare", {
-    targetId: inventory.targets.find((t) => t.path === target).id,
+    scanId,
+    directoryPath: target,
   });
   assert.equal(r.status, 200);
   const preview = await r.json();
@@ -128,11 +132,15 @@ test(
         body: JSON.stringify(body),
       });
     await send("settings", { developmentRoots: [project] });
-    const inventory = await fetch(base + "/api/development").then((r) =>
-      r.json(),
-    );
+    await send("scans", { root: project, folderMinBytes: 0 });
+    for (let i = 0; i < 200; i++) {
+      const current = await fetch(base + "/api/state").then((r) => r.json());
+      if (!current.job && current.scans.length) break;
+      await new Promise((r) => setTimeout(r, 25));
+    }
     const prepare = send("cleanup/prepare", {
-      targetId: inventory.targets[0].id,
+      scanId: app.state.scans[0].id,
+      directoryPath: target,
     });
     let busy = false;
     for (let i = 0; i < 50; i++) {
@@ -159,7 +167,7 @@ test(
     );
   },
 );
-test("cleanup from a saved finding resolves only a fully deleted target", async (t) => {
+test("cleanup from a saved folder records its completed audit without a review disposition", async (t) => {
   const dir = await mkdtemp(path.join(tmpdir(), "reclaim-finding-cleanup-"));
   t.after(() => rm(dir, { recursive: true, force: true }));
   const root = path.join(dir, "project");
@@ -183,70 +191,29 @@ test("cleanup from a saved finding resolves only a fully deleted target", async 
       },
       body: JSON.stringify(body),
     });
-  await send("scans", { root, minimumBytes: 1 });
+  await send("scans", { root, folderMinBytes: 0 });
   for (let i = 0; i < 100; i++) {
-    if (app.state.scans.length) break;
+    if (
+      !(await fetch(base + "/api/state").then((r) => r.json())).job &&
+      app.state.scans.length
+    )
+      break;
     await new Promise((r) => setTimeout(r, 20));
   }
   const scan = await fetch(base + "/api/scans/" + app.state.scans[0].id).then(
       (r) => r.json(),
     ),
-    finding = scan.findings.find((f) => f.path.endsWith("dist"));
+    directory = scan.directories.find((f) => f.path.endsWith("dist"));
   const preview = await send("cleanup/prepare", {
     scanId: scan.id,
-    findingId: finding.id,
+    directoryPath: directory.path,
   }).then((r) => r.json());
   const result = await send("cleanup/execute", {
     id: preview.id,
     confirmation: preview.phrase,
   }).then((r) => r.json());
   assert.equal(result.status, "deleted");
-  assert.deepEqual(app.state.reviews[scan.id]?.resolved, [finding.id]);
-});
-test("targeted operations use selected roots and never start a full-file scan", async (t) => {
-  const dir = await mkdtemp(path.join(tmpdir(), "reclaim-target-api-"));
-  t.after(() => rm(dir, { recursive: true, force: true }));
-  const root = path.join(dir, "project");
-  await mkdir(path.join(root, "node_modules"), { recursive: true });
-  await mkdir(path.join(root, ".cache"), { recursive: true });
-  await writeFile(path.join(root, "package.json"), "{}");
-  await writeFile(path.join(root, "package-lock.json"), "{}");
-  await writeFile(path.join(root, "node_modules", "package.dat"), "data");
-  const app = await createApp({ dataDir: path.join(dir, "data") });
-  t.after(() => app.close());
-  await new Promise((r) => app.server.listen(0, "127.0.0.1", r));
-  const base = `http://127.0.0.1:${app.server.address().port}`,
-    state = await fetch(base + "/api/state").then((r) => r.json());
-  const send = (url, body) =>
-    fetch(base + "/api/" + url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Reclaim-Token": state.token,
-      },
-      body: JSON.stringify(body),
-    });
-  let response = await send("development", { root, operation: "dependencies" });
-  assert.equal(response.status, 200);
-  const result = await response.json();
-  assert.equal(result.targets.length, 1);
-  assert.equal(result.targets[0].category, "dependencies");
-  assert.equal(result.coverage.complete, true);
-  assert.equal(app.state.scans.length, 0);
-  response = await send("development", { root, operation: "caches" });
-  assert.equal((await response.json()).targets[0].cleanupSupported, false);
-  // Prior operation targets remain known and the selected root need not be a configured default.
-  const preview = await send("cleanup/prepare", {
-    targetId: result.targets[0].id,
-  });
-  assert.equal(preview.status, 200);
-  assert.equal(
-    (await send("development", { root, operation: "unknown" })).status,
-    400,
-  );
-  assert.equal(
-    (await send("development", { root: "relative", operation: "builds" }))
-      .status,
-    400,
-  );
+  assert.equal(app.state.cleanups[0].scanId, scan.id);
+  assert.equal(app.state.cleanups[0].status, "deleted");
+  assert.equal(app.state.reviews, undefined);
 });

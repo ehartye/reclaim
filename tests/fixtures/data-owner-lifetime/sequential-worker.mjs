@@ -25,7 +25,7 @@ try {
   };
   await update(apps[0], { exclusions: ['owner-A-preserve-this'] });
   await fs.copyFile(path.join(root, 'data/state.json'), path.join(root, 'after-A.json'));
-  await update(apps[1], { staleDays: 123 });
+  await update(apps[1], { folderMinBytes: 123 });
   await fs.copyFile(path.join(root, 'data/state.json'), path.join(root, 'after-B.json'));
   await fs.writeFile(path.join(root, 'sequential-result.json'), JSON.stringify({ ports: apps.map(a => a.server.address().port), sameDataDirectory: true }));
 } finally {

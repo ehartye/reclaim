@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { createApp } from "../server/app.mjs";
 
-test("HTTP lifecycle persists real scans, review selections and reports; rejects foreign writes", async (t) => {
+test("HTTP lifecycle persists real scans, folder reports; rejects foreign writes", async (t) => {
   const dir = await mkdtemp(path.join(tmpdir(), "reclaim-api-"));
   t.after(() => rm(dir, { recursive: true, force: true }));
   const root = path.join(dir, "workspace");
@@ -50,12 +50,12 @@ test("HTTP lifecycle persists real scans, review selections and reports; rejects
   );
   assert.equal((await send("/api/scans", { root: "relative" })).status, 400);
   assert.equal(
-    (await send("/api/scans", { root, minimumBytes: -1 })).status,
+    (await send("/api/scans", { root, folderMinBytes: -1 })).status,
     400,
   );
   const starts = await Promise.all(
     Array.from({ length: 6 }, () =>
-      send("/api/scans", { root, minimumBytes: 1 }),
+      send("/api/scans", { root, folderMinBytes: 1 }),
     ),
   );
   assert.deepEqual(
@@ -73,93 +73,30 @@ test("HTTP lifecycle persists real scans, review selections and reports; rejects
   const scan = await fetch(base + "/api/scans/" + current.scans[0].id).then(
     (r) => r.json(),
   );
-  assert.equal(scan.findings.length, 1);
-  assert.equal(
-    (
-      await send("/api/review", {
-        scanId: scan.id,
-        selected: [scan.findings[0].id],
-        ignored: [],
-      })
-    ).status,
-    200,
-  );
+  assert(scan.folderSizing);
   const csv = await fetch(base + `/api/scans/${scan.id}/report.csv`).then((r) =>
     r.text(),
   );
-  assert.match(csv, /Dependency folder to review/);
+  assert.match(csv, /Folder path/);
   const report = await fetch(base + `/api/scans/${scan.id}/report.json`).then(
     (r) => r.json(),
   );
   assert.equal(report.scan.id, scan.id);
-  assert.equal(report.review.selected.length, 1);
-  const resolved = await send("/api/review", {
-    scanId: scan.id,
-    selected: [],
-    ignored: [],
-    resolved: [scan.findings[0].id],
-  });
-  assert.equal(resolved.status, 200);
-  const doneReport = await fetch(
-    base + `/api/scans/${scan.id}/report.json`,
-  ).then((r) => r.json());
-  assert.deepEqual(doneReport.review.resolved, [scan.findings[0].id]);
-  const doneCsv = await fetch(base + `/api/scans/${scan.id}/report.csv`).then(
-    (r) => r.text(),
-  );
-  assert.match(doneCsv, /"Resolved"/);
-  assert.equal(
-    (await send("/api/review", { scanId: scan.id, selected: [], ignored: [] }))
-      .status,
-    200,
-  );
-  assert.deepEqual(
-    (await fetch(base + "/api/state").then((r) => r.json())).reviews[scan.id]
-      .resolved,
-    [scan.findings[0].id],
-    "Old clients must not erase resolutions",
-  );
-  assert.equal(
-    (
-      await send("/api/review", {
-        scanId: scan.id,
-        selected: [scan.findings[0].id],
-        ignored: [],
-        resolved: [scan.findings[0].id],
-      })
-    ).status,
-    400,
-  );
-  assert.equal(
-    (
-      await send("/api/review", {
-        scanId: scan.id,
-        selected: [scan.findings[0].id],
-        ignored: [],
-        resolved: [],
-      })
-    ).status,
-    200,
-  );
   const reveal = await send("/api/reveal", {
     scanId: scan.id,
-    path: scan.findings[0].path,
+    path: path.join(root, "node_modules"),
   });
   assert.equal(reveal.status, 200);
   assert.equal((await reveal.json()).folder, path.join(root, "node_modules"));
   assert.equal(
-    (await send("/api/reveal", { scanId: scan.id, path: scan.files[0].path }))
-      .status,
+    (await send("/api/reveal", { scanId: scan.id, path: root })).status,
     200,
   );
-  assert.deepEqual(revealed, [
-    path.join(root, "node_modules"),
-    path.join(root, "node_modules"),
-  ]);
+  assert.deepEqual(revealed, [path.join(root, "node_modules"), root]);
   revealError = new Error("Windows could not open this folder");
   const rejected = await send("/api/reveal", {
     scanId: scan.id,
-    path: scan.findings[0].path,
+    path: path.join(root, "node_modules"),
   });
   assert.equal(rejected.status, 500);
   assert.match((await rejected.json()).error, /Windows could not open/);
@@ -173,47 +110,22 @@ test("HTTP lifecycle persists real scans, review selections and reports; rejects
     400,
   );
   assert.equal(
-    (await send("/api/settings", { exclusions: ["secrets"], staleDays: 120 }))
+    (await send("/api/settings", { exclusions: ["secrets"], skipCloud: false }))
       .status,
     200,
   );
   const blockedTemp = path.join(dir, "data", "state.tmp");
   await mkdir(blockedTemp);
-  assert.equal((await send("/api/settings", { staleDays: 90 })).status, 500);
+  assert.equal((await send("/api/settings", { skipCloud: true })).status, 500);
   await rmdir(blockedTemp);
   assert.equal(
-    (await send("/api/settings", { staleDays: 120 })).status,
+    (await send("/api/settings", { skipCloud: false })).status,
     200,
     "Persistence recovers after a temporary write failure",
-  );
-  assert.equal(
-    (
-      await send("/api/review", {
-        scanId: scan.id,
-        selected: [],
-        ignored: [],
-        resolved: ["not-a-finding"],
-      })
-    ).status,
-    400,
-  );
-  assert.equal(
-    (
-      await send("/api/review", {
-        scanId: scan.id,
-        selected: [],
-        ignored: [],
-        resolved: [scan.findings[0].id],
-      })
-    ).status,
-    200,
   );
   await app.close();
   const reopened = await createApp({ dataDir: path.join(dir, "data") });
   t.after(() => reopened.close());
-  assert.equal(reopened.state.settings.staleDays, 120);
+  assert.equal(reopened.state.settings.skipCloud, false);
   assert.equal(reopened.state.scans.length, 1);
-  assert.deepEqual(reopened.state.reviews[scan.id].resolved, [
-    scan.findings[0].id,
-  ]);
 });

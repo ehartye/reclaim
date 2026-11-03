@@ -5,10 +5,7 @@ import path from "node:path";
 import { tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
 import { createApp } from "../server/app.mjs";
-import {
-  rollupFolderRows,
-  normalizeFolderReport,
-} from "../server/folder-accounting.mjs";
+import { rollupFolderRows } from "../server/folder-accounting.mjs";
 test("filesystem root aggregates each descendant once without counting itself as a child", () => {
   const root = path.parse(path.resolve(".")).root,
     child = path.join(root, "child"),
@@ -56,7 +53,6 @@ test("a cached filesystem root is not doubled and correct logical totals are nev
     folderSizing: { accountingVersion: 2, minimumBytes: 0 },
     directories: [row],
   };
-  normalizeFolderReport(report);
   assert.equal(row.bytes, 1200000000000);
 });
 test("saved filesystem-root folder report is not double counted in API or CSV and original evidence remains intact", async (t) => {
@@ -80,15 +76,16 @@ test("saved filesystem-root folder report is not double counted in API or CSV an
     findings: [],
     files: [],
     notices: [],
-    options: { exclusions: [], skipCloud: true },
+    options: { operation: "folder-sizes", exclusions: [], skipCloud: true },
     folderSizing: {
+      accountingVersion: 2,
       minimumBytes: 500000000,
       basis: "logical-file-entries",
       scopeComplete: true,
       matchingCount: 2,
     },
     directories: [
-      { path: root, bytes: 1641339031742, fileCount: 20, directoryCount: 4 },
+      { path: root, bytes: 820669515871, fileCount: 10, directoryCount: 2 },
       { path: child, bytes: 500000000000, fileCount: 5, directoryCount: 1 },
     ],
   };

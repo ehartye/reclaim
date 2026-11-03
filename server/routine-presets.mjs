@@ -1,4 +1,4 @@
-import { normalizeRoots } from "./development.mjs";
+import { normalizeRoots } from "./project-discovery.mjs";
 import { getRoutineDefinition } from "./routine-policies.mjs";
 import { ROUTINE_MAXIMUM_BYTES } from "../shared/routines.ts";
 

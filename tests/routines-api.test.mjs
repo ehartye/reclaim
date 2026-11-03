@@ -30,7 +30,12 @@ async function fixture(t, routineProbe, routines, cleanupFactory) {
       { path: dist, bytes: 600000001, fileCount: 1, complete: true },
       { path: cache, bytes: 700000000, fileCount: 1, complete: true },
     ],
-    options: { exclusions: [], skipCloud: true },
+    options: { operation: "folder-sizes", exclusions: [], skipCloud: true },
+    folderSizing: {
+      accountingVersion: 2,
+      minimumBytes: 0,
+      scopeComplete: true,
+    },
   };
   const state = {
     settings: {
@@ -82,7 +87,7 @@ async function fixture(t, routineProbe, routines, cleanupFactory) {
   return { app, base, post, run, root, dist, cache, dataDir, scanId, state };
 }
 
-test("routine catalog reads are pure; strict presets persist without altering legacy planner values or reports", async (t) => {
+test("routine catalog reads are pure; strict presets persist while dropping retired planner settings and preserving reports", async (t) => {
   const f = await fixture(t);
   const before = await readFile(path.join(f.dataDir, "state.json"), "utf8");
   const reportBefore = await readFile(
@@ -123,9 +128,9 @@ test("routine catalog reads are pure; strict presets persist without altering le
     restarted.state.routines.presets["generated-output"].minimumBytes,
     600000001,
   );
-  assert.equal(restarted.state.settings.opportunityMinBytes, 104857600);
-  assert.equal(restarted.state.settings.opportunityAgeDays, 30);
-  assert.deepEqual(restarted.state.reviews, f.state.reviews);
+  assert.equal(restarted.state.settings.opportunityMinBytes, undefined);
+  assert.equal(restarted.state.settings.opportunityAgeDays, undefined);
+  assert.equal(restarted.state.reviews, undefined);
   assert.equal(
     await readFile(path.join(f.dataDir, f.scanId + ".json"), "utf8"),
     reportBefore,
