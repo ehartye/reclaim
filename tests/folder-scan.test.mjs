@@ -32,7 +32,7 @@ test("folder totals scan includes every nested folder strictly over500MB without
     maxFiles: 1,
   });
   assert.equal(result.status, "completed");
-  assert.equal(result.files.length, 0);
+  assert.equal("files" in result, false);
   assert.equal(result.fileCount, 6);
   assert.equal(result.totalBytes, 1100000100);
   assert.equal(result.folderSizing.minimumBytes, 500000000);
@@ -48,7 +48,7 @@ test("folder totals scan includes every nested folder strictly over500MB without
       path.join(root, "arbitrary", "node_modules", "package"),
     ].sort(),
   );
-  assert.equal(result.findings.length, 0);
+  assert.equal("findings" in result, false);
   assert.equal(result.folderSizing.basis, "logical-file-entries");
 });
 test("folder totals honor exclusions and junction boundaries with explicit incomplete coverage", async (t) => {
@@ -88,7 +88,7 @@ test("cancelled folder totals remain an explicit incomplete result", async (t) =
   );
   assert.equal(result.status, "cancelled");
   assert.equal(result.folderSizing.scopeComplete, false);
-  assert.equal(result.files.length, 0);
+  assert.equal("files" in result, false);
 });
 
 test("folder totals count hardlinked names and ignore the former directory cap", async (t) => {

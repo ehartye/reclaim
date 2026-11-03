@@ -58,16 +58,26 @@ try {
     page.getByRole("status").filter({ hasText: "Scan settings saved" }),
   ).toBeVisible();
   await page.reload();
-  await page.getByRole("button", { name: "Development", exact: true }).click();
-  await expect(page.locator(".development-target")).toHaveCount(1);
-  await expect(page.locator(".restore-note")).toContainText("npm run build");
-  await audit("development desktop");
-  await page.screenshot({
-    path: "review/development-desktop.png",
-    fullPage: true,
-  });
   await page
-    .getByRole("button", { name: "Review deletion", exact: true })
+    .getByRole("button", { name: "Scan settings", exact: true })
+    .click();
+  await expect(
+    page.getByLabel("Development folders", { exact: true }),
+  ).toHaveValue(root);
+  await page.getByRole("button", { name: "New scan", exact: true }).click();
+  await page.getByLabel("Folder path", { exact: true }).fill(root);
+  await page.getByLabel("Folder size greater than", { exact: true }).fill("0");
+  await page.getByRole("button", { name: "Start scan", exact: true }).click();
+  await expect(page.locator(".folder-tree-row")).toHaveCount(1);
+  await page
+    .getByRole("button", { name: "Expand projects", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "Expand example", exact: true })
+    .click();
+  await audit("folder cleanup desktop");
+  await page
+    .getByRole("button", { name: "Review cleanup for build", exact: true })
     .click();
   await expect(
     page.getByRole("dialog", { name: "Confirm permanent deletion" }),
@@ -92,14 +102,14 @@ try {
   if (
     await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)
   )
-    throw new Error("Development mobile overflow");
-  await audit("development mobile");
+    throw new Error("Folder cleanup mobile overflow");
+  await audit("folder cleanup mobile");
   await page.screenshot({
-    path: "review/development-mobile.png",
+    path: "review/folder-cleanup-mobile.png",
     fullPage: true,
   });
   await page
-    .getByRole("button", { name: "Review deletion", exact: true })
+    .getByRole("button", { name: "Review cleanup for build", exact: true })
     .click();
   await page.getByLabel("Type DELETE build to confirm").fill("DELETE build");
   await expect(
@@ -120,28 +130,14 @@ try {
     await expect(lstat(target)).rejects.toMatchObject({ code: "ENOENT" });
   }).toPass();
   await page.getByRole("button", { name: "Close", exact: true }).click();
-  await expect(page.locator(".cleanup-history")).toContainText("deleted");
-  await page
-    .getByRole("button", { name: "Refresh projects", exact: true })
-    .click();
-  await expect(page.locator(".development-target")).toHaveCount(0);
-  // Existing development cleanup remains a compatibility path; caches stay manual review.
-  const cache = path.join(project, ".cache");
-  await mkdir(cache);
-  await writeFile(path.join(cache, "cached.bin"), "cache");
-  await page
-    .getByLabel("Discovery operation", { exact: true })
-    .selectOption("caches");
-  await expect(page.locator(".development-target")).toHaveCount(1);
-  await expect(page.locator(".development-target")).toContainText(cache);
-  await expect(
-    page.getByRole("button", { name: "Manual review required", exact: true }),
-  ).toBeDisabled();
-  expect(app.state.scans).toHaveLength(0);
-  await audit("compatibility cache review mobile");
+  expect(app.state.cleanups[0].status).toBe("deleted");
   await page.reload();
-  await page.getByRole("button", { name: "Development", exact: true }).click();
-  await expect(page.locator(".cleanup-history")).toContainText("deleted");
+  await expect(
+    page.getByText("Cleanup changed this search area after the scan.", {
+      exact: true,
+    }),
+  ).toBeVisible();
+  expect(app.state.cleanups[0].status).toBe("deleted");
   expect(errors).toEqual([]);
   await writeFile(
     "review/cleanup-accessibility.json",

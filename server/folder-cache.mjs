@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { open, writeFile, mkdir, rename, rm } from "node:fs/promises";
 import path from "node:path";
-import { latestChange } from "../shared/opportunities.ts";
+import { latestChange } from "../shared/cleanup-changes.ts";
 export const FOLDER_CACHE_LIMITS = Object.freeze({
   maxBytes: 8 * 1024 * 1024,
   maxRecords: 25000,

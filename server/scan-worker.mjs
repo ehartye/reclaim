@@ -3,7 +3,6 @@ import { writeFile, statfs } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import path from "node:path";
 import { scan } from "./scanner.mjs";
-import { writeReportIndex } from "./opportunity-index.mjs";
 import { loadFolderCache, saveFolderCache } from "./folder-cache.mjs";
 
 const controller = new AbortController(),
@@ -20,10 +19,10 @@ const signal = {
     controller.signal.removeEventListener(...args),
 };
 try {
-  const folderCache =
-    workerData.options.operation === "folder-sizes"
-      ? await loadFolderCache(workerData.dataDir, workerData.options)
-      : [];
+  const folderCache = await loadFolderCache(
+    workerData.dataDir,
+    workerData.options,
+  );
   const result = await scan(workerData.options, {
     signal,
     folderCache,
@@ -52,24 +51,17 @@ try {
     path.join(workerData.dataDir, result.id + ".json"),
     JSON.stringify(result),
   );
-  // A compact sidecar avoids reparsing this full report for future cleanup ranking.
-  // Index/cache failure must not discard a successfully saved scan.
-  try {
-    await writeReportIndex(result, { dataDir: workerData.dataDir });
-  } catch {}
   const summary = {
     id: result.id,
-    operation: result.options.operation || "full",
+    operation: "folder-sizes",
     root: result.root,
     name: result.name,
     status: result.status,
     startedAt: result.startedAt,
     completedAt: result.completedAt,
     totalBytes: result.totalBytes,
-    opportunityBytes: result.opportunityBytes,
     fileCount: result.fileCount,
     durationMs: result.durationMs,
-    findingCount: result.findings.length,
     coverageKey: createHash("sha256")
       .update(
         JSON.stringify({

@@ -11,35 +11,13 @@ import { readFile, writeFile, mkdir, rename, lstat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { randomBytes } from "node:crypto";
 import { openFolder } from "./reveal.mjs";
-import {
-  normalizeReview,
-  reviewStatus,
-  dispositionReview,
-} from "../shared/review.ts";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { defaults } from "./scanner.mjs";
 import { runScanJob } from "./jobs.mjs";
-import {
-  normalizeRoots,
-  discoverDevelopment,
-  git,
-  parseWorktrees,
-  discoveryOperations,
-  within,
-  describeDiscoveryTarget,
-} from "./development.mjs";
+import { normalizeRoots, git, parseWorktrees } from "./project-discovery.mjs";
 import { createCleanup } from "./cleanup.mjs";
-import { enrichFindings } from "./insights.mjs";
-import {
-  createOpportunityIndex,
-  loadReportIndex,
-} from "./opportunity-index.mjs";
-import { createMeasurementJobs } from "./opportunity-jobs.mjs";
-import { probeActivity } from "./opportunity-advice.mjs";
-import { latestChange } from "../shared/opportunities.ts";
 import { inspectFolderFiles } from "./folder-scan.mjs";
-import { normalizeFolderReport } from "./folder-accounting.mjs";
 import { findIgnoredFolders } from "./ignored-folders.mjs";
 import {
   routineDefinitions,
@@ -79,10 +57,11 @@ function validate(input, settings = false) {
     out.folderScanMode = input.folderScanMode;
   }
   if (!settings && input.operation !== undefined) {
-    if (!["full", "folder-sizes"].includes(input.operation))
+    if (input.operation !== "folder-sizes")
       throw error("Choose a supported scan operation.");
     out.operation = input.operation;
   }
+  if (!settings) out.operation = "folder-sizes";
   if (input.developmentRoots !== undefined) {
     try {
       out.developmentRoots = normalizeRoots(input.developmentRoots);
@@ -91,15 +70,7 @@ function validate(input, settings = false) {
     }
   }
   const ranges = {
-    minimumBytes: [1, 1024 ** 4],
-    largeFileBytes: [1, 1024 ** 5],
-    staleDays: [1, 36500],
-    duplicateMinBytes: [1, 1024 ** 4],
-    hashBudgetBytes: [1, 1024 ** 4],
-    maxFiles: [1, 1000000],
     folderMinBytes: [0, 1024 ** 5],
-    opportunityAgeDays: [0, 36500],
-    opportunityMinBytes: [0, 1024 ** 5],
   };
   for (const [key, [min, max]] of Object.entries(ranges))
     if (input[key] !== undefined) {
@@ -111,7 +82,7 @@ function validate(input, settings = false) {
         throw error(`Invalid ${key}.`);
       out[key] = input[key];
     }
-  for (const key of ["duplicates", "skipCloud"])
+  for (const key of ["skipCloud"])
     if (input[key] !== undefined) {
       if (typeof input[key] !== "boolean") throw error(`Invalid ${key}.`);
       out[key] = input[key];
@@ -146,6 +117,12 @@ function validate(input, settings = false) {
   return out;
 }
 
+// Maintenance validates stored preferences with the same constraints as the API.
+// Callers may discard the normalized return value to preserve canonical values.
+export function validateSettings(input) {
+  return validate(input, true);
+}
+
 export async function createApp({
   dataDir = path.join(appRoot, ".reclaim"),
   dev = false,
@@ -167,20 +144,12 @@ export async function createApp({
     if (e.code !== "ENOENT") throw e;
   }
   const state = {
-    settings: { ...defaults, ...stored?.settings },
+    settings: { ...defaults, ...validate(stored?.settings || {}, true) },
     scans: stored?.scans || [],
-    reviews: Object.fromEntries(
-      Object.entries(stored?.reviews || {}).map(([id, value]) => [
-        id,
-        normalizeReview(value),
-      ]),
-    ),
     cleanups: stored?.cleanups || [],
     routines: loadRoutinePresets(stored?.routines),
   };
   const token = randomBytes(32).toString("hex");
-  const opportunityIndex = createOpportunityIndex({ dataDir });
-  const measurementJobs = await createMeasurementJobs({ dataDir });
   let job = null;
   let writeChain = Promise.resolve();
   const save = () => {
@@ -199,9 +168,31 @@ export async function createApp({
   const loadScan = async (id) => {
     if (!state.scans.some((s) => s.id === id))
       throw error("Scan not found.", 404);
-    return normalizeFolderReport(
-      JSON.parse(await readFile(path.join(dataDir, id + ".json"), "utf8")),
-    );
+    let report;
+    try {
+      report = JSON.parse(
+        await readFile(path.join(dataDir, id + ".json"), "utf8"),
+      );
+    } catch (cause) {
+      if (cause.code === "ENOENT")
+        throw error(
+          "Saved report is unavailable. Choose another scan or start a new scan.",
+          404,
+        );
+      if (cause instanceof SyntaxError)
+        throw error("Saved report is unreadable. Start a new folder scan.");
+      throw cause;
+    }
+    if (
+      !report?.folderSizing ||
+      report.options?.operation !== "folder-sizes" ||
+      report.folderSizing.accountingVersion !== 2 ||
+      !Array.isArray(report.directories)
+    )
+      throw error(
+        "This report format is unsupported. Start a new folder scan.",
+      );
+    return report;
   };
   let mainCheckout = appRoot;
   try {
@@ -210,26 +201,18 @@ export async function createApp({
     )[0].worktree;
   } catch {}
   let cleanupBusy = false,
-    developmentTargets = new Map(),
     cleanupIdle = Promise.resolve(),
     resolveCleanupIdle = () => {},
     closed = false;
   const cleanup = cleanupFactory({
     protectedPaths: [appRoot, mainCheckout, dataDir],
     onRecord: async (record) => {
-      if (record.status === "deleted" && record.scanId && record.findingId)
-        state.reviews[record.scanId] = dispositionReview(
-          normalizeReview(state.reviews[record.scanId]),
-          [record.findingId],
-          "resolve",
-        );
       const index = state.cleanups.findIndex((r) => r.id === record.id);
       if (index >= 0) state.cleanups[index] = record;
       else state.cleanups.unshift(record);
       await save();
     },
   });
-  const measurementBusy = () => Boolean(measurementJobs.getSnapshot().job);
   const routineRuns = new Map();
   const settingsKey = () => JSON.stringify(state.settings);
   const routineInput = (operation) => {
@@ -260,11 +243,8 @@ export async function createApp({
     invalidPresets: state.routines.invalidPresets,
   });
   const routineBusy = async (operation) => {
-    if (job || cleanupBusy || measurementBusy())
-      throw error(
-        "Wait for the active scan, measurement or cleanup to finish.",
-        409,
-      );
+    if (job || cleanupBusy)
+      throw error("Wait for the active scan or cleanup to finish.", 409);
     cleanupBusy = true;
     cleanupIdle = new Promise((resolve) => {
       resolveCleanupIdle = resolve;
@@ -281,30 +261,6 @@ export async function createApp({
       if (item.expiresAt <= Date.now()) routineRuns.delete(id);
     while (routineRuns.size > 100)
       routineRuns.delete(routineRuns.keys().next().value);
-  };
-  const cleanupChanges = () =>
-    state.cleanups.map((record) => ({
-      path: record.path,
-      changedAt: Date.parse(record.completedAt || record.startedAt),
-    }));
-  const registerInventory = async (inventory, roots) => {
-    for (let start = 0; start < inventory.targets.length; start += 12)
-      await Promise.all(
-        inventory.targets.slice(start, start + 12).map(async (target) => {
-          const blocked = cleanup.protectionReason(target.path);
-          if (blocked) {
-            target.cleanupSupported = false;
-            target.blockedReason = blocked;
-            target.reason += " " + blocked;
-          }
-          target.activity = await probeActivity(target);
-          developmentTargets.set(target.id, {
-            ...target,
-            discoveryRoots: roots,
-          });
-        }),
-      );
-    return inventory;
   };
   const locations = [];
   for (const [label, target] of [
@@ -360,7 +316,6 @@ export async function createApp({
             token,
             locations,
             cleanupBusy,
-            measurementJob: measurementJobs.getSnapshot().job,
             job: job
               ? {
                   id: job.id,
@@ -376,98 +331,32 @@ export async function createApp({
           json(routineCatalog());
           return;
         }
-        if (req.method === "GET" && url.pathname === "/api/development") {
-          opportunityIndex.ensure(state.scans);
-          const roots = state.settings.developmentRoots;
-          const inventory = await discoverDevelopment(roots, state.settings);
-          if (roots !== state.settings.developmentRoots)
-            throw error("Development roots changed. Refresh projects.", 409);
-          json(await registerInventory(inventory, roots));
-          return;
-        }
-        if (req.method === "GET" && url.pathname === "/api/intelligence") {
-          const measured = measurementJobs.getSnapshot();
-          json({
-            index: opportunityIndex.getSnapshot(),
-            measurements: measured.measurements,
-            measurementJob: measured.job,
-            measurementError: measured.error,
-            changes: cleanupChanges(),
-          });
-          return;
-        }
         const match = url.pathname.match(
           /^\/api\/scans\/([a-f\d-]+)(?:\/(report\.(?:csv|json)))?$/,
         );
         if (req.method === "GET" && match) {
           const s = await loadScan(match[1]);
           if (match[2] === "report.csv") {
-            if (s.folderSizing) {
-              const rows = [
-                ["Folder path", "Recursive logical bytes", "Files", "Coverage"],
-                ...s.directories
-                  .filter((d) => d.bytes > s.folderSizing.minimumBytes)
-                  .sort((a, b) => b.bytes - a.bytes)
-                  .map((d) => [
-                    d.path,
-                    d.bytes,
-                    d.fileCount,
-                    s.folderSizing.estimated
-                      ? "Estimated mix of saved and current metadata"
-                      : s.folderSizing.scopeComplete
-                        ? "Complete for scan rules"
-                        : "Partial lower bound",
-                  ]),
-              ];
-              res.writeHead(200, {
-                "Content-Type": "text/csv; charset=utf-8",
-                "Content-Disposition":
-                  'attachment; filename="reclaim-folders.csv"',
-              });
-              res.end(
-                "\uFEFF" +
-                  rows.map((r) => r.map(csvCell).join(",")).join("\r\n"),
-              );
-              return;
-            }
-            const review = normalizeReview(state.reviews[s.id]);
             const rows = [
-              [
-                "Title",
-                "Category",
-                "Path",
-                "Estimated logical bytes",
-                "Risk",
-                "Reason",
-                "Impact",
-                "Suggested action",
-                "Selected",
-                "Ignored",
-                "Disposition",
-              ],
-              ...s.findings.map((f) => [
-                f.title,
-                f.category,
-                f.path,
-                f.bytes,
-                f.risk,
-                f.reason,
-                f.impact,
-                f.action,
-                review.selected.includes(f.id),
-                review.ignored.includes(f.id),
-                {
-                  open: "Open",
-                  review: "In review",
-                  resolved: "Resolved",
-                  dismissed: "Dismissed",
-                }[reviewStatus(review, f.id)],
-              ]),
+              ["Folder path", "Recursive logical bytes", "Files", "Coverage"],
+              ...s.directories
+                .filter((d) => d.bytes > s.folderSizing.minimumBytes)
+                .sort((a, b) => b.bytes - a.bytes)
+                .map((d) => [
+                  d.path,
+                  d.bytes,
+                  d.fileCount,
+                  s.folderSizing.estimated
+                    ? "Estimated mix of saved and current metadata"
+                    : s.folderSizing.scopeComplete
+                      ? "Complete for scan rules"
+                      : "Partial lower bound",
+                ]),
             ];
             res.writeHead(200, {
               "Content-Type": "text/csv; charset=utf-8",
               "Content-Disposition":
-                'attachment; filename="reclaim-report.csv"',
+                'attachment; filename="reclaim-folders.csv"',
             });
             res.end(
               "\uFEFF" + rows.map((r) => r.map(csvCell).join(",")).join("\r\n"),
@@ -481,14 +370,25 @@ export async function createApp({
             );
             json({
               scan: s,
-              review: normalizeReview(state.reviews[s.id]),
               sizeBasis: "Logical bytes, not measured allocated disk savings",
             });
             return;
           }
-          json({ ...s, findings: await enrichFindings(s.findings) });
+          json(s);
           return;
         }
+        if (
+          [
+            "/api/development",
+            "/api/development/quick",
+            "/api/intelligence",
+            "/api/intelligence/start",
+            "/api/measurements/start",
+            "/api/measurements/cancel",
+            "/api/review",
+          ].includes(url.pathname)
+        )
+          throw error("Endpoint not found.", 404);
         if (req.method !== "POST") throw error("Endpoint not found.", 404);
         if (req.headers["x-reclaim-token"] !== token)
           throw error("Session token missing. Reload the app.", 403);
@@ -702,147 +602,10 @@ export async function createApp({
           json(listing);
           return;
         }
-        if (
-          url.pathname === "/api/development" ||
-          url.pathname === "/api/development/quick"
-        ) {
-          opportunityIndex.ensure(state.scans);
-          if (!discoveryOperations.includes(body.operation || "all"))
-            throw error("Choose a supported discovery operation.");
-          let roots;
-          try {
-            roots =
-              body.root === undefined
-                ? state.settings.developmentRoots
-                : normalizeRoots([body.root]);
-          } catch (e) {
-            throw error(e.message);
-          }
-          if (url.pathname.endsWith("/quick")) {
-            const records = { ...opportunityIndex.getSnapshot().records };
-            if (!Object.keys(records).length) {
-              const cached = await Promise.all(
-                state.scans.map(async (scan) => {
-                  try {
-                    return await loadReportIndex(scan, {
-                      dataDir,
-                      cacheOnly: true,
-                    });
-                  } catch {
-                    return null;
-                  }
-                }),
-              );
-              for (const cache of cached)
-                for (const [id, record] of Object.entries(cache?.records || {}))
-                  if (
-                    !records[id] ||
-                    Date.parse(record.recordedAt) >
-                      Date.parse(records[id].recordedAt)
-                  )
-                    records[id] = record;
-            }
-            const targets = [];
-            for (const record of Object.values(records)) {
-              if (
-                Date.parse(record.recordedAt || "") <=
-                latestChange(record.path, cleanupChanges())
-              )
-                continue;
-              if (!roots.some((root) => within(record.path, root))) continue;
-              if (
-                state.settings.exclusions.some((e) =>
-                  path.isAbsolute(e)
-                    ? within(record.path, path.resolve(e))
-                    : record.path
-                        .split(path.sep)
-                        .some((part) => part.toLowerCase() === e.toLowerCase()),
-                )
-              )
-                continue;
-              if (
-                state.settings.skipCloud &&
-                record.path
-                  .split(path.sep)
-                  .some((part) => /^OneDrive/i.test(part))
-              )
-                continue;
-              try {
-                const target = await describeDiscoveryTarget(record.path);
-                if (
-                  target &&
-                  (!body.operation ||
-                    body.operation === "all" ||
-                    target.category === body.operation)
-                )
-                  targets.push({ ...target, recorded: record });
-              } catch {}
-            }
-            json(
-              await registerInventory(
-                {
-                  source: "saved",
-                  operation: body.operation || "all",
-                  roots,
-                  targets,
-                  projects: [],
-                  notices: [
-                    "Quick look uses historical saved estimates, not a complete current directory discovery.",
-                  ],
-                  coverage: {
-                    complete: false,
-                    directoriesVisited: 0,
-                    skippedSubtrees: 0,
-                    directoryLimit: 100000,
-                  },
-                },
-                roots,
-              ),
-            );
-            return;
-          }
-          const inventory = await discoverDevelopment(roots, {
-            ...state.settings,
-            operation: body.operation || "all",
-          });
-          json(await registerInventory(inventory, roots));
-          return;
-        }
-        if (url.pathname === "/api/intelligence/start") {
-          opportunityIndex.ensure(state.scans);
-          json({ ok: true });
-          return;
-        }
-        if (url.pathname === "/api/measurements/cancel") {
-          measurementJobs.cancel();
-          json({ ok: true });
-          return;
-        }
-        if (url.pathname === "/api/measurements/start") {
-          if (job || cleanupBusy)
-            throw error(
-              "Finish the active scan or cleanup before measuring candidates.",
-              409,
-            );
-          if (
-            !Array.isArray(body.targetIds) ||
-            !body.targetIds.length ||
-            body.targetIds.length > 20 ||
-            body.targetIds.some(
-              (id) => typeof id !== "string" || !developmentTargets.has(id),
-            )
-          )
-            throw error("Choose one to twenty known development folders.");
-          const targets = body.targetIds.map((id) =>
-            developmentTargets.get(id),
-          );
-          json(measurementJobs.start(targets), 202);
-          return;
-        }
         if (url.pathname === "/api/scans") {
-          if (job || cleanupBusy || measurementBusy())
-            throw error("A scan or cleanup is already running.", 409);
           const options = { ...state.settings, ...validate(body) };
+          if (job || cleanupBusy)
+            throw error("A scan or cleanup is already running.", 409);
           let info;
           try {
             info = await lstat(options.root);
@@ -852,7 +615,7 @@ export async function createApp({
           if (!info.isDirectory() || info.isSymbolicLink())
             throw error("Choose a regular folder.");
           // Filesystem validation yields; another request may have started a scan meanwhile.
-          if (job || cleanupBusy || measurementBusy())
+          if (job || cleanupBusy)
             throw error("A scan or cleanup is already running.", 409);
           const controller = new AbortController();
           const current = {
@@ -905,12 +668,6 @@ export async function createApp({
             throw error("Wait for the cleanup inspection to finish.", 409);
           state.settings = { ...state.settings, ...validate(body, true) };
           routineRuns.clear();
-          if (
-            body.developmentRoots !== undefined ||
-            body.exclusions !== undefined ||
-            body.skipCloud !== undefined
-          )
-            developmentTargets.clear();
           await save();
           json(state.settings);
           return;
@@ -919,7 +676,7 @@ export async function createApp({
           url.pathname === "/api/cleanup/prepare" ||
           url.pathname === "/api/cleanup/execute"
         ) {
-          if (job || cleanupBusy || measurementBusy())
+          if (job || cleanupBusy)
             throw error("Wait for the active scan or cleanup to finish.", 409);
           cleanupBusy = true;
           cleanupIdle = new Promise((resolve) => {
@@ -931,27 +688,14 @@ export async function createApp({
               json(result);
               return;
             }
+            if (body.targetId !== undefined || body.findingId !== undefined)
+              throw error(
+                "Legacy target and finding preparation are unsupported. Choose a saved folder or routine.",
+              );
             let target,
               kind = "generated",
               context = {};
-            if (typeof body.targetId === "string") {
-              const known = developmentTargets.get(body.targetId);
-              if (
-                !known ||
-                !(known.discoveryRoots || state.settings.developmentRoots).some(
-                  (root) => {
-                    const relative = path.relative(root, known.path);
-                    return (
-                      relative === "" ||
-                      (!relative.startsWith("..") && !path.isAbsolute(relative))
-                    );
-                  },
-                )
-              )
-                throw error("Refresh Development and choose a known target.");
-              target = known.path;
-              kind = known.kind;
-            } else if (
+            if (
               typeof body.scanId === "string" &&
               typeof body.directoryPath === "string"
             ) {
@@ -968,22 +712,9 @@ export async function createApp({
                 if (e.code !== "ENOENT") throw e;
               }
               context = { scanId: report.id };
-            } else if (
-              typeof body.scanId === "string" &&
-              typeof body.findingId === "string"
-            ) {
-              const scan = await loadScan(body.scanId),
-                finding = scan.findings.find((f) => f.id === body.findingId);
-              if (
-                !finding ||
-                !["builds", "dependencies"].includes(finding.category)
-              )
-                throw error("Choose a generated-folder finding.");
-              target = finding.path;
-              context = { scanId: scan.id, findingId: finding.id };
             } else
               throw error(
-                "Choose a known development target or saved finding.",
+                "Choose a folder in a saved scan or use routine preparation.",
               );
             const preview = await cleanup.prepare(target, kind, context);
             json(preview);
@@ -994,7 +725,7 @@ export async function createApp({
           }
         }
         if (url.pathname === "/api/shutdown") {
-          if (job || cleanupBusy || measurementBusy())
+          if (job || cleanupBusy)
             throw error(
               "Finish active scans and cleanup before closing Reclaim.",
               409,
@@ -1003,44 +734,9 @@ export async function createApp({
           void closeApp();
           return;
         }
-        if (url.pathname === "/api/review") {
-          const s = await loadScan(body.scanId);
-          const ids = new Set(s.findings.map((f) => f.id));
-          const reviewInput = {
-            selected: body.selected,
-            ignored: body.ignored,
-            resolved:
-              body.resolved === undefined
-                ? normalizeReview(state.reviews[s.id]).resolved
-                : body.resolved,
-          };
-          for (const key of ["selected", "ignored", "resolved"])
-            if (
-              !Array.isArray(reviewInput[key]) ||
-              reviewInput[key].length > s.findings.length ||
-              reviewInput[key].some((id) => !ids.has(id))
-            )
-              throw error("Invalid review selection.");
-          const claimed = new Set();
-          for (const key of ["selected", "ignored", "resolved"])
-            for (const id of new Set(reviewInput[key])) {
-              if (claimed.has(id))
-                throw error("A finding can have only one disposition.");
-              claimed.add(id);
-            }
-          state.reviews[s.id] = normalizeReview(reviewInput);
-          await save();
-          json({ ok: true });
-          return;
-        }
         if (url.pathname === "/api/reveal") {
           const s = await loadScan(body.scanId);
-          const known = new Set([
-            s.root,
-            ...s.findings.map((f) => f.path),
-            ...s.files.map((f) => f.path),
-            ...s.directories.map((f) => f.path),
-          ]);
+          const known = new Set([s.root, ...s.directories.map((f) => f.path)]);
           if (typeof body.path !== "string" || !known.has(body.path))
             throw error("Choose a path from this scan.");
           let target = path.resolve(body.path);
@@ -1128,8 +824,6 @@ export async function createApp({
     job?.controller.abort();
     try {
       await job?.promise;
-      await measurementJobs.close();
-      await opportunityIndex.close();
       await cleanupIdle;
       await writeChain;
     } finally {

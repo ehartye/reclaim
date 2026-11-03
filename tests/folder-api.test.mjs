@@ -81,7 +81,7 @@ test("folder-only scans persist aggregate reports and validate operation and str
     r.json(),
   );
   assert.equal(report.folderSizing.matchingCount, 2);
-  assert.equal(report.files.length, 0);
+  assert.equal("files" in report, false);
   assert.equal(report.status, "completed");
   const inspect = await fetch(base + "/api/folders/inspect", {
     method: "POST",

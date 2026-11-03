@@ -16,7 +16,7 @@ import {
   inspectWorktree,
   git,
   within,
-} from "./development.mjs";
+} from "./project-discovery.mjs";
 const fail = (message) => {
   throw Object.assign(new Error(message), { status: 409 });
 };
