@@ -117,6 +117,12 @@ function validate(input, settings = false) {
   return out;
 }
 
+// Maintenance validates stored preferences with the same constraints as the API.
+// Callers may discard the normalized return value to preserve canonical values.
+export function validateSettings(input) {
+  return validate(input, true);
+}
+
 export async function createApp({
   dataDir = path.join(appRoot, ".reclaim"),
   dev = false,

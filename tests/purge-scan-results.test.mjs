@@ -15,6 +15,8 @@ import {
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
+import { spawn } from "node:child_process";
+import { once } from "node:events";
 
 const load = () => import("../scripts/purge-scan-results.mjs");
 const quiet = {
@@ -35,7 +37,13 @@ async function fixture(t) {
       folderMinBytes: 123,
       staleDays: 90,
     },
-    routines: { good: { name: "kept" }, invalid: { roots: 12 } },
+    routines: {
+      schemaVersion: 1,
+      presets: { good: { name: "kept" } },
+      invalidPresets: {
+        invalid: { parameters: { roots: 12 }, error: "needs repair" },
+      },
+    },
     cleanups: [{ id: "audit", path: "preserved", completedAt: "2026-01-01" }],
     scans: [{ id: randomUUID(), private: "SUMMARY_SECRET" }],
     reviews: { secret: "REVIEW_SECRET" },
@@ -423,7 +431,7 @@ test("production evidence absence and observer failure refuse without a fallback
         },
       },
     }),
-    /inspection unavailable/,
+    /Purge operation failed/,
   );
   assert.deepEqual(await snapshot(f.dataDir), before);
   assert.equal(JSON.parse(await readFile(f.receipt, "utf8")).status, "refused");
@@ -444,4 +452,114 @@ test("unexpected sanitized temporary file is never removed", async (t) => {
   });
   assert.equal(partial.status, "partial");
   assert.deepEqual(await snapshot(f.dataDir), before);
+});
+test("unknown absolute Node service is a possible writer regardless of script name", async (t) => {
+  const root = await mkdtemp(path.join(tmpdir(), "owner-probe-"));
+  const script = path.join(root, "service.mjs");
+  await writeFile(
+    script,
+    `import { createApp } from ${JSON.stringify(new URL("../server/app.mjs", import.meta.url).href)}; const app=await createApp({dataDir:${JSON.stringify(path.join(root, "data"))}}); await new Promise(r=>app.server.listen(0,"127.0.0.1",r)); console.log(app.server.address().port); process.on("message",async()=>{await app.close();process.exit(0)});`,
+  );
+  const child = spawn(process.execPath, [script], {
+    windowsHide: true,
+    stdio: ["ignore", "pipe", "pipe", "ipc"],
+  });
+  const exited = once(child, "exit");
+  t.after(async () => {
+    if (child.exitCode === null) child.send("close");
+    await exited;
+    await rm(root, { recursive: true, force: true });
+  });
+  const [output] = await once(child.stdout, "data");
+  const state = await (
+    await fetch(
+      `http://127.0.0.1:${Number(output.toString().trim())}/api/state`,
+    )
+  ).json();
+  assert.equal(state.product, "reclaim");
+  const { productionProcessAdapter } =
+    await import("../scripts/purge-processes.mjs");
+  const observed = await productionProcessAdapter.observe(
+    path.join(root, "data"),
+    { services: [] },
+  );
+  assert.ok(
+    [...observed.candidates, ...observed.ambiguous].some(
+      (item) => item.pid === child.pid,
+    ),
+    "actual Reclaim writer cannot be excluded by its absolute arbitrary entrypoint",
+  );
+});
+test("malformed state and temporary JSON never leak payload fragments into diagnostics", async (t) => {
+  const api = await load();
+  for (const mode of ["state", "temporary", "io"]) {
+    const f = await fixture(t),
+      receipt = await api.inventory(f.options);
+    const secret = "REVIEW_SELECTION_SECRET";
+    if (mode === "state")
+      await writeFile(path.join(f.dataDir, "state.json"), secret);
+    if (mode === "temporary")
+      await writeFile(
+        path.join(f.dataDir, ".purge-sanitized-" + receipt.id + ".tmp"),
+        secret,
+      );
+    let diagnostic = "";
+    try {
+      const result = await api.applyPurge({
+        ...f.options,
+        exclusiveMaintenance: true,
+        ...(mode === "io"
+          ? {
+              fileOps: {
+                rename: async () => {
+                  throw new Error(secret);
+                },
+              },
+            }
+          : {}),
+      });
+      diagnostic = JSON.stringify(result.errors);
+    } catch (error) {
+      diagnostic = error.message;
+    }
+    assert.equal(
+      diagnostic.includes("REVIEW_SEL"),
+      false,
+      mode + " public diagnostic",
+    );
+    assert.equal(
+      (await readFile(f.receipt, "utf8")).includes("REVIEW_SEL"),
+      false,
+      mode + " receipt diagnostic",
+    );
+  }
+});
+test("purge refuses application-invalid preferences and malformed routine containers", async (t) => {
+  const api = await load();
+  const invalid = [
+    { settings: { exclusions: [""] } },
+    { settings: { exclusions: ["  "] } },
+    { settings: { exclusions: Array(101).fill("keep") } },
+    { settings: { exclusions: ["x".repeat(1001)] } },
+    { settings: { folderMinBytes: 1024 ** 5 + 1 } },
+    { settings: { developmentRoots: Array(31).fill(path.resolve("project")) } },
+    { settings: { developmentRoots: [path.parse(process.cwd()).root] } },
+    { settings: { developmentRoots: [path.resolve("bad\nroot")] } },
+    { routines: {} },
+    { routines: { schemaVersion: 2, presets: {} } },
+    { routines: { schemaVersion: 1, presets: [] } },
+    { routines: { schemaVersion: 1, presets: {}, invalidPresets: [] } },
+  ];
+  for (const fields of invalid) {
+    const f = await fixture(t);
+    await writeFile(
+      path.join(f.dataDir, "state.json"),
+      JSON.stringify({ ...f.state, ...fields }),
+    );
+    await assert.rejects(
+      api.inventory(f.options),
+      /state|setting|routine/i,
+      JSON.stringify(fields),
+    );
+  }
 });

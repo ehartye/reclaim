@@ -127,13 +127,10 @@ export const productionProcessAdapter = {
       }
       if (/reclaim|server[/\\]index\.mjs|scan-worker\.mjs/i.test(command))
         candidates.push({ pid: processInfo.ProcessId });
-      // Script/eval launches with no identifiable absolute module are unknown owners.
-      else if (
-        /\s(?:-e|--eval|-p|--print)(?:\s|=)/.test(command) ||
-        (!/[a-z]:[\\/].+\.(?:[cm]?js|ts)(?:["'\s]|$)/i.test(command) &&
-          !/node_modules|@playwright|@openai|cua-repl/i.test(command))
-      )
-        ambiguous.push({ pid: processInfo.ProcessId });
+      // A different entrypoint (including an absolute module or package wrapper)
+      // can import createApp and write the same data directory. Names are not
+      // ownership evidence; every other Node/Electron process remains unknown.
+      else ambiguous.push({ pid: processInfo.ProcessId });
     }
     return { candidates, ambiguous };
   },

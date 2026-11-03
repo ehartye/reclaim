@@ -6,6 +6,8 @@ import { createHash, randomUUID } from "node:crypto";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { productionProcessAdapter } from "./purge-processes.mjs";
+import { validateSettings } from "../server/app.mjs";
+import { loadRoutinePresets } from "../server/routine-presets.mjs";
 
 const exec = promisify(execFile);
 const TOOL = "reclaim-offline-result-purge",
@@ -29,8 +31,19 @@ export function canonical(value) {
     );
   return JSON.stringify(value);
 }
+class PurgeError extends Error {}
 function fail(message) {
-  throw new Error(message);
+  throw new PurgeError(message);
+}
+function diagnostic(error) {
+  if (error instanceof PurgeError) return error.message.slice(0, 1000);
+  if (
+    ["EACCES", "EPERM", "ENOENT", "EEXIST", "ENOSPC", "EIO", "EBUSY"].includes(
+      error?.code,
+    )
+  )
+    return `Filesystem operation failed (${error.code}).`;
+  return "Purge operation failed; keep the service stopped and inspect the maintenance environment.";
 }
 function key(value) {
   return process.platform === "win32" ? value.toLowerCase() : value;
@@ -147,10 +160,13 @@ async function boundedJson(file) {
       canonical(identity(stat))
     )
       fail("File changed while reading.");
-    return {
-      value: JSON.parse(buffer.subarray(0, bytesRead).toString("utf8")),
-      stat,
-    };
+    let value;
+    try {
+      value = JSON.parse(buffer.subarray(0, bytesRead).toString("utf8"));
+    } catch {
+      fail("State, receipt or sanitized temporary file contains invalid JSON.");
+    }
+    return { value, stat };
   } finally {
     await handle.close();
   }
@@ -162,8 +178,8 @@ async function stateInfo(dataDir) {
   let result;
   try {
     result = await boundedJson(path.join(dataDir, "state.json"));
-  } catch (error) {
-    fail(`Saved state cannot be safely read: ${error.message}`);
+  } catch {
+    fail("Saved state cannot be safely read.");
   }
   const state = result.value;
   if (
@@ -171,27 +187,22 @@ async function stateInfo(dataDir) {
     !object(state.settings) ||
     !Array.isArray(state.scans) ||
     !Array.isArray(state.cleanups) ||
-    (state.routines !== undefined && !object(state.routines)) ||
     (state.reviews !== undefined && !object(state.reviews))
   )
     fail("Saved state has malformed fields; refusing to reconstruct defaults.");
   const settings = { ...state.settings };
-  if (
-    (settings.skipCloud !== undefined &&
-      typeof settings.skipCloud !== "boolean") ||
-    (settings.exclusions !== undefined &&
-      (!Array.isArray(settings.exclusions) ||
-        settings.exclusions.some((item) => typeof item !== "string"))) ||
-    (settings.developmentRoots !== undefined &&
-      (!Array.isArray(settings.developmentRoots) ||
-        settings.developmentRoots.some(
-          (item) => typeof item !== "string" || !path.isAbsolute(item),
-        ))) ||
-    (settings.folderMinBytes !== undefined &&
-      (!Number.isSafeInteger(settings.folderMinBytes) ||
-        settings.folderMinBytes < 0))
-  )
+  try {
+    validateSettings(settings);
+  } catch {
     fail("Saved state has malformed supported settings.");
+  }
+  // Loading checks the container and tolerates invalid individual presets. Its
+  // normalized output is deliberately discarded so saved values remain exact.
+  try {
+    loadRoutinePresets(state.routines);
+  } catch {
+    fail("Saved state has a malformed routine preset container.");
+  }
   for (const retired of [
     "minimumBytes",
     "largeFileBytes",
@@ -536,9 +547,11 @@ export async function applyPurge(options) {
   } catch (error) {
     receipt.mode = "apply";
     receipt.status = "refused";
-    receipt.errors = [{ at: new Date().toISOString(), message: error.message }];
+    receipt.errors = [
+      { at: new Date().toISOString(), message: diagnostic(error) },
+    ];
     await writeReceipt(location.receipt, receipt);
-    throw error;
+    fail(diagnostic(error));
   }
   receipt.mode = "apply";
   receipt.status = "partial";
@@ -630,7 +643,7 @@ export async function applyPurge(options) {
     receipt.status = "partial";
     receipt.errors.push({
       at: new Date().toISOString(),
-      message: error.message,
+      message: diagnostic(error),
     });
   } finally {
     if (temporary) await fs.unlink(temporary).catch(() => {});
@@ -648,7 +661,7 @@ export async function applyPurge(options) {
     receipt.completedAt = null;
     receipt.errors.push({
       at: new Date().toISOString(),
-      message: "Remaining targets could not be counted: " + error.message,
+      message: "Remaining targets could not be counted: " + diagnostic(error),
     });
   }
   await writeReceipt(location.receipt, receipt);
@@ -694,7 +707,7 @@ if (
     );
     if (result.status === "partial") process.exitCode = 1;
   } catch (error) {
-    console.error(`Purge refused: ${error.message}`);
+    console.error(`Purge refused: ${diagnostic(error)}`);
     process.exitCode = 1;
   }
 }
