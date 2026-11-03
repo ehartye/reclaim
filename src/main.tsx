@@ -372,7 +372,7 @@ function App() {
               <button
                 className="secondary small"
                 onClick={() =>
-                  void api("cancel").catch((e) => notify(e.message))
+                  void api("cancel", {}).catch((e) => notify(e.message))
                 }
               >
                 <Square size={13} />

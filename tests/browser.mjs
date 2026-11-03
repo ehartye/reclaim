@@ -158,6 +158,38 @@ try {
       fullPage: true,
     });
   }
+  // Hold an active progress view while checking the real cancellation endpoint.
+  // Worker cancellation itself is covered by the disposable jobs regression.
+  const currentState = await fetch(base + "/api/state").then((r) => r.json());
+  await page.route("**/api/state", (route) =>
+    route.fulfill({
+      json: {
+        ...currentState,
+        job: {
+          id: "active-fixture",
+          root,
+          progress: {
+            phase: "Scanning folders",
+            current: root,
+            fileCount: 0,
+            totalBytes: 0,
+          },
+        },
+      },
+    }),
+  );
+  await page.reload();
+  const stopped = page.waitForResponse((r) => r.url().endsWith("/api/cancel"));
+  await page.getByRole("button", { name: "Stop scan", exact: true }).click();
+  const cancellation = await stopped;
+  expect(cancellation.request().method()).toBe("POST");
+  expect(cancellation.request().postDataJSON()).toEqual({});
+  expect(cancellation.status()).toBe(200);
+  expect(await cancellation.json()).toEqual({ ok: true });
+  await page.unroute("**/api/state");
+  await expect(
+    page.getByRole("button", { name: "Stop scan", exact: true }),
+  ).toHaveCount(0);
   expect(errors).toEqual([]);
   console.log(
     "Current folder browser passed: reveal success/failure, JSON/CSV downloads, recoverable export failure, exclusions, history comparison, desktop/mobile axe.",

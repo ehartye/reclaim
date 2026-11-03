@@ -129,3 +129,56 @@ test("HTTP lifecycle persists real scans, folder reports; rejects foreign writes
   assert.equal(reopened.state.settings.skipCloud, false);
   assert.equal(reopened.state.scans.length, 1);
 });
+
+test("authenticated cancellation stops a real folder worker and persists stopped coverage", async (t) => {
+  const dir = await mkdtemp(path.join(tmpdir(), "reclaim-cancel-api-"));
+  const root = path.join(dir, "workspace");
+  await mkdir(root);
+  for (let i = 0; i < 100; i++) {
+    const folder = path.join(root, `branch-${i}`);
+    await mkdir(folder);
+    await writeFile(path.join(folder, "entry"), "disposable fixture");
+  }
+  const app = await createApp({ dataDir: path.join(dir, "data") });
+  await new Promise((resolve) => app.server.listen(0, "127.0.0.1", resolve));
+  t.after(async () => {
+    await app.close();
+    await rm(dir, { recursive: true, force: true });
+  });
+  const base = `http://127.0.0.1:${app.server.address().port}`;
+  const state = await fetch(base + "/api/state").then((r) => r.json());
+  const post = (route, body) =>
+    fetch(base + route, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Reclaim-Token": state.token,
+      },
+      body: JSON.stringify(body),
+    });
+  assert.equal(
+    (
+      await post("/api/scans", {
+        root,
+        operation: "folder-sizes",
+        folderScanMode: "fresh",
+      })
+    ).status,
+    202,
+  );
+  assert.equal((await post("/api/cancel", {})).status, 200);
+  let settled;
+  for (let i = 0; i < 200; i++) {
+    settled = await fetch(base + "/api/state").then((r) => r.json());
+    if (!settled.job) break;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  assert.equal(settled.job, null);
+  assert.equal(settled.scans.length, 1);
+  assert.equal(settled.scans[0].status, "cancelled");
+  const report = await fetch(base + "/api/scans/" + settled.scans[0].id).then(
+    (r) => r.json(),
+  );
+  assert.equal(report.status, "cancelled");
+  assert.equal(report.folderSizing.scopeComplete, false);
+});

@@ -77,3 +77,5 @@ Visual review uses the established navy rail, blue actions, Aptos/Segoe UI text 
 
 WP2 verification: production build passed; Node suite passed 138 tests with one existing skip (139 total); all seven scripts in `npm run test:ui` passed. No serious/critical axe findings, browser errors or horizontal overflow were found in the exercised views.
 
+
+WP2 review correction: the retained Stop scan control used a GET request although cancellation requires authenticated POST. A browser regression first failed with `Expected: POST; Received: GET`; the control now posts an empty JSON body. The browser checks the actual endpoint response and progress-view settlement. A disposable HTTP lifecycle regression starts a real worker, cancels it, waits for idle and verifies a persisted cancelled report with incomplete coverage. Production build, the current-folder browser workflow and seven focused backend tests passed. Red/green metadata logs are `review/wp2-stop-red.txt`, `review/wp2-stop-green.txt` and `review/wp2-stop-backend.txt`; they contain no live reports.
