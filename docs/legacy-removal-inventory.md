@@ -1,5 +1,11 @@
 # Legacy interface removal inventory
 
+## WP3 — offline result purge
+
+`scripts/purge-scan-results.mjs` inventories and permanently unlinks only recognized saved-result artifacts during operator-controlled exclusive maintenance. `scripts/purge-processes.mjs` validates exit evidence and performs real Windows process observations. Receipt ownership uses CurrentUser DPAPI plus exact path/file identity; the CLI has no injected-adapter option. [Operating instructions](offline-result-purge.md) define the allowlist, preserved state, receipt schema and recovery procedure. No live purge was performed during implementation.
+
+Fourteen disposable fixture groups cover metadata-only inventory, current preferences and invalid presets, exact target scope, malformed state, receipt collisions/forgeries/copies, junction/reparse and hardlink refusal, changed targets/additions, missing results, second writers and ambiguous ownership, process-observation failure, partial deletion/state-write failure and interrupted-update resume. The initial seven groups failed before implementation. A separate red assertion proved retired settings remained before their exact removal was implemented. WP3 build passed; the full Node suite passed 153 tests with one existing private qualification skip (154 total).
+
 ## WP1 — retained backend and contracts
 
 Only `folder-sizes` scans are accepted. Omitted operations normalize to that operation in both HTTP and scanner dispatch. Explicit retired operations receive HTTP 400 even while a scan is running. Current reports require folder sizing accounting version 2 and the folder-sizes operation; missing payloads receive 404 and unsupported payloads receive a recoverable 400. No report migration is performed.
